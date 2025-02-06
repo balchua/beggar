@@ -1,0 +1,96 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 's3s_fs'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=s3s-fs"
+                ],
+                "filter": {
+                    "name": "s3s_fs",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 's3s-fs'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=s3s-fs",
+                    "--package=s3s-fs",
+                    "--features=binary"
+                ],
+                "filter": {
+                    "name": "s3s-fs",
+                    "kind": "bin"
+                }
+            },
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RUST_LOG": "debug"
+            },
+            "args": [
+                "--access-key",
+                "abc123",
+                "--secret-key",
+                "def456",
+                "--port",
+                "2345",
+                "/tmp/s3sfs"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 's3s-fs'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=s3s-fs",
+                    "--package=s3s-fs"
+                ],
+                "filter": {
+                    "name": "s3s-fs",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'it_aws'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=it_aws",
+                    "--package=s3s-fs"
+                ],
+                "filter": {
+                    "name": "it_aws",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
