@@ -94,7 +94,6 @@ impl<T: DataStore> S3 for StorageBackend<T> {
                 .await
                 .map_err(|e| s3_error!(e, NoSuchKey))?;
             let file_metadata = try_!(file.metadata().await);
-            // let last_modified = Timestamp::from(try_!(file_metadata.modified()));
             let file_len = file_metadata.len();
 
             let (content_length, content_range) = match input.range {
@@ -214,6 +213,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         _: S3Request<ListBucketsInput>,
     ) -> S3Result<S3Response<ListBucketsOutput>> {
         let mut buckets: Vec<Bucket> = Vec::new();
+
         let buckets_in_db = self.get_all_buckets().await?;
 
         for bucket in &buckets_in_db {
@@ -230,35 +230,6 @@ impl<T: DataStore> S3 for StorageBackend<T> {
                 buckets.push(bucket);
             }
         }
-        // let mut buckets: Vec<Bucket> = Vec::new();
-        // let mut iter = try_!(fs::read_dir(&self.root).await);
-        // while let Some(entry) = try_!(iter.next_entry().await) {
-        //     let file_type = try_!(entry.file_type().await);
-        //     if file_type.is_dir().not() {
-        //         continue;
-        //     }
-
-        //     let file_name = entry.file_name();
-        //     let Some(name) = file_name.to_str() else {
-        //         continue;
-        //     };
-        //     if s3s::path::check_bucket_name(name).not() {
-        //         continue;
-        //     }
-
-        //     let file_meta = try_!(entry.metadata().await);
-        //     // Not all filesystems/mounts provide all file attributes like created timestamp,
-        //     // therefore we try to fallback to modified if possible.
-        //     // See https://github.com/Nugine/s3s/pull/22 for more details.
-        //     let created_or_modified_date =
-        //         Timestamp::from(try_!(file_meta.created().or(file_meta.modified())));
-
-        //     let bucket = Bucket {
-        //         creation_date: Some(created_or_modified_date),
-        //         name: Some(name.to_owned()),
-        //     };
-        //     buckets.push(bucket);
-        // }
 
         let output = ListBucketsOutput {
             buckets: Some(buckets),
@@ -345,12 +316,13 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         req: S3Request<PutObjectInput>,
     ) -> S3Result<S3Response<PutObjectOutput>> {
         let input = req.input;
-        if let Some(ref storage_class) = input.storage_class {
-            let is_valid = ["STANDARD", "REDUCED_REDUNDANCY"].contains(&storage_class.as_str());
-            if !is_valid {
-                return Err(s3_error!(InvalidStorageClass));
-            }
-        }
+        // There is no need to check for the storage_class, since we dont really care
+        // if let Some(ref storage_class) = input.storage_class {
+        //     let is_valid = ["STANDARD", "REDUCED_REDUNDANCY"].contains(&storage_class.as_str());
+        //     if !is_valid {
+        //         return Err(s3_error!(InvalidStorageClass));
+        //     }
+        // }
 
         let PutObjectInput {
             body,

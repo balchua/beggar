@@ -133,7 +133,7 @@ impl DataStore for PostgresDatastore {
             r#"
             SELECT DISTINCT bucket
             FROM s3_item_detail
-            "#
+            "#,
         )
         .fetch_all(&self.pool)
         .await?;

@@ -2594,6 +2594,7 @@ dependencies = [
  "serde_yaml",
  "sqlx",
  "std-next",
+ "tempfile",
  "thiserror 2.0.7",
  "time",
  "tokio",

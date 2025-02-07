@@ -419,3 +419,69 @@ impl Drop for FileWriter<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use mockall::mock;
+    use mockall::predicate::*;
+    use tempfile::tempdir;
+
+    mock! {
+        #[derive(Debug)]
+        pub TestDataStore {}
+        #[async_trait]
+        impl DataStore for TestDataStore {
+            async fn save_s3_item_detail(&self, item: &S3ItemDetail) -> Result<()>;
+            async fn get_s3_item_detail(&self, bucket: &str, key: &str) -> Result<Option<S3ItemDetail>>;
+            async fn get_s3_item_detail_with_filter(
+                &self,
+                bucket: &str,
+                filter: &str,
+            ) -> Result<Vec<S3ItemDetail>>;
+            async fn get_all_buckets(&self) -> Result<Vec<String>>;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_save_s3_item_detail() {
+        let mut mock_ds = MockTestDataStore::new();
+        mock_ds
+            .expect_save_s3_item_detail()
+            .times(1)
+            .returning(|_| Ok(()));
+
+        // initialize the temp directory
+        // Create a directory inside of `env::temp_dir()`
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        let root = tmp_dir.path().as_os_str();
+        let metadata: Option<dto::Metadata> = serde_json::from_str(r#"{"hello": "world"}"#).ok();
+        let internal_info = r#"{"internal": "info"}"#.to_string();
+        let info: InternalInfo = serde_json::from_str(&internal_info).ok().unwrap();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let result = backend
+            .save_s3_item_detail("bb", "item-1.txt", "random_md5sum", &metadata, info)
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_get_s3_item_detail() {
+        let mut mock_ds = MockTestDataStore::new();
+        mock_ds
+            .expect_get_s3_item_detail()
+            .times(1)
+            .returning(|_, _| Ok(None));
+
+        // Create a directory inside of `env::temp_dir()`
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        let root = tmp_dir.path().as_os_str();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let result = backend.get_s3_item_detail("test_bucket", "test_key").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+    }
+}
