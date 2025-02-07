@@ -2,24 +2,20 @@
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(clippy::needless_return)]
 
-use config::ConfigError;
-use s3s_fs::FileSystem;
 use s3s_fs::PostgresDatastore;
 use s3s_fs::Result;
+use s3s_fs::StorageBackend;
 
 use s3s::auth::SimpleAuth;
 use s3s::service::S3ServiceBuilder;
-use s3s_fs::Settings;
-use s3s_fs::StorageBackend;
 
 use std::io::IsTerminal;
-// use std::ops::Not;
 use std::path::PathBuf;
 
 use tokio::net::TcpListener;
 
 use clap::{CommandFactory, Parser};
-use tracing::{debug, info};
+use tracing::{error, info};
 
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder as ConnBuilder;
@@ -52,7 +48,7 @@ struct Opt {
     root: PathBuf,
 }
 
-fn settings() -> Result<s3s_fs::Settings, ConfigError> {
+fn settings() -> Result<s3s_fs::Settings, config::ConfigError> {
     let s = config::Config::builder()
         .add_source(config::File::with_name("config/default.yaml").required(false))
         .add_source(config::File::with_name("config/local.yaml").required(false))
@@ -95,32 +91,23 @@ fn check_cli_args(opt: &Opt) {
 }
 
 fn main() -> Result {
-    // let opt = Opt::parse();
-    // check_cli_args(&opt);
+    let opt = Opt::parse();
+    check_cli_args(&opt);
 
     setup_tracing();
-    let s = settings();
-
-    if let Ok(s) = s {
-        debug!("settings: {:?}", s);
-        return test_db(s);
-    }
-    Ok(())
-    //run(opt)
+    run(opt)
 }
 
 #[tokio::main]
-async fn test_db(s: Settings) -> Result<()> {
-    debug!("settings: {:?}", s);
-    let backend = StorageBackend::new(PostgresDatastore::new(&s));
-    backend.save_s3_item_detail().await?;
-    Ok(())
-}
-
-// #[tokio::main]
 async fn run(opt: Opt) -> Result {
+    // load application settings / configuration
+    let s = settings().expect("failed to load settings");
+
+    info!(host = ?s.datasource.host, port = s.datasource.port, "settings loaded");
+    let ds = PostgresDatastore::new(&s);
+    ds.migrate().await?;
     // Setup S3 provider
-    let fs = FileSystem::new(opt.root)?;
+    let fs = StorageBackend::new(opt.root, ds)?;
 
     // Setup S3 service
     let service = {
@@ -152,7 +139,7 @@ async fn run(opt: Opt) -> Result {
                 match res {
                     Ok(conn) => conn,
                     Err(err) => {
-                        tracing::error!("error accepting connection: {err}");
+                        error!("error accepting connection: {err}");
                         continue;
                     }
                 }

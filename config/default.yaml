@@ -2,3 +2,7 @@ datasource:
   host: localhost
   port: 5432
   schema: peasant
+  max_connections: 10
+  min_connections: 1
+  test_before_acquire: true
+  acquire_slow_threshold: 1000

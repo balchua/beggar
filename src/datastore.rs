@@ -1,16 +1,28 @@
+use core::fmt;
+use std::time::Duration;
+
 use async_trait::async_trait;
-use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
+use sqlx::{Pool, Postgres};
 
 use crate::error::Result;
-use crate::Settings;
+use crate::{S3ItemDetail, Settings};
 
 #[async_trait]
-pub trait DataStore {
-    async fn save_s3_item_detail(&self) -> Result<()>;
+pub trait DataStore: Send + Sync + 'static + std::fmt::Debug {
+    async fn save_s3_item_detail(&self, item: &S3ItemDetail) -> Result<()>;
+    async fn get_s3_item_detail(&self, bucket: &str, key: &str) -> Result<Option<S3ItemDetail>>;
+    async fn get_s3_item_detail_with_filter(
+        &self,
+        bucket: &str,
+        filter: &str,
+    ) -> Result<Vec<S3ItemDetail>>;
+
+    async fn get_all_buckets(&self) -> Result<Vec<String>>;
 }
 
 pub struct PostgresDatastore {
-    pool: PgPool,
+    pool: Pool<Postgres>,
 }
 
 impl PostgresDatastore {
@@ -22,41 +34,118 @@ impl PostgresDatastore {
         let password = &settings.datasource.password;
         let schema = &settings.datasource.schema; // or use a field from settings if available
 
-        let connection_string =
-            format!("postgres://{user}:{password}@{host}:{port}/{db}?search_path={schema}");
+        let max_connections = settings.datasource.max_connections;
+        let min_connections = settings.datasource.min_connections;
+        let test_before_acquire = settings.datasource.test_before_acquire;
+        let acquire_slow_threshold =
+            Duration::from_millis(settings.datasource.acquire_slow_threshold);
+        let pool_options = PgPoolOptions::new()
+            .max_connections(max_connections)
+            .min_connections(min_connections)
+            .acquire_slow_threshold(acquire_slow_threshold)
+            .test_before_acquire(test_before_acquire);
 
-        let pool = PgPool::connect_lazy(&connection_string).expect("Unable to create PgPool");
+        let connection_string = format!(
+            "postgres://{user}:{password}@{host}:{port}/{db}?options=-csearch_path={schema}"
+        );
+
+        let pool = pool_options
+            .connect_lazy(&connection_string)
+            .expect("Unable to create PgPool");
 
         Self { pool }
+    }
+
+    pub async fn migrate(&self) -> Result {
+        sqlx::migrate!("./migrations").run(&self.pool).await?;
+        Ok(())
     }
 }
 
 #[async_trait]
 impl DataStore for PostgresDatastore {
-    async fn save_s3_item_detail(&self) -> Result<()> {
-        // Implement the logic to save the S3 item detail to the Postgres database
+    async fn save_s3_item_detail(&self, item: &S3ItemDetail) -> Result<()> {
         sqlx::query!(
             r#"
-INSERT INTO s3_item_detail (
-    bucket,
-    key,
-    metadata,
-    last_modified,
-    md5,
-    data_location
-)
-VALUES (
-    'my-bucket',
-    'some/key/path',
-    '{"custom":"metadata"}',
-    '2023-10-03 12:34:56',
-    'abcd1234abcd1234abcd1234abcd1234',
-    'my-bucket/some/key/path'
-);
-"#
+            INSERT INTO s3_item_detail (bucket, key, metadata, internal_info, last_modified, md5, data_location)
+            VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, $5, $6)
+            ON CONFLICT (bucket, key) DO UPDATE
+            SET metadata = $3,
+            internal_info = $4,
+            md5 = $5,
+            data_location = $6
+            "#,
+            item.bucket,
+            item.key,
+            item.metadata,
+            item.internal_info,
+            item.e_tag,
+            item.data_location
         )
         .execute(&self.pool)
         .await?;
+
         Ok(())
+    }
+
+    async fn get_s3_item_detail(&self, bucket: &str, key: &str) -> Result<Option<S3ItemDetail>> {
+        let result = sqlx::query_as!(
+            S3ItemDetail,
+            r#"
+            SELECT bucket, key, metadata, internal_info, last_modified, md5 as e_tag, data_location
+            FROM s3_item_detail
+            WHERE bucket = $1 AND key = $2 
+            "#,
+            bucket,
+            key
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(result)
+    }
+
+    async fn get_s3_item_detail_with_filter(
+        &self,
+        bucket: &str,
+        filter: &str,
+    ) -> Result<Vec<S3ItemDetail>> {
+        let filter_with_wildcard = format!("{}%", filter);
+        let result = sqlx::query_as!(
+            S3ItemDetail,
+            r#"
+            SELECT bucket, key, metadata, internal_info, last_modified, md5 as e_tag, data_location
+            FROM s3_item_detail
+            WHERE bucket = $1 AND key LIKE $2
+            ORDER by key asc
+            "#,
+            bucket,
+            filter_with_wildcard
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(result)
+    }
+
+    async fn get_all_buckets(&self) -> Result<Vec<String>> {
+        let result_set = sqlx::query!(
+            r#"
+            SELECT DISTINCT bucket
+            FROM s3_item_detail
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let result: Vec<String> = result_set.iter().map(|row| row.bucket.clone()).collect();
+
+        Ok(result)
+    }
+}
+
+impl fmt::Debug for PostgresDatastore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PostgresDatastore").finish()
     }
 }
