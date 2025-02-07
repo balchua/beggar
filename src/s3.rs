@@ -1,5 +1,5 @@
-use crate::fs::InternalInfo;
-use crate::fs::StorageBackend;
+use crate::storage_backend::InternalInfo;
+use crate::storage_backend::StorageBackend;
 use crate::utils::*;
 use crate::DataStore;
 

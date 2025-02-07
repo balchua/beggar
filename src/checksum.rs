@@ -1,19 +1,34 @@
-use crate::fs::InternalInfo;
+use crate::storage_backend::InternalInfo;
 
 use stdx::default::default;
 
-pub fn modify_internal_info(info: &mut serde_json::Map<String, serde_json::Value>, checksum: &s3s::dto::Checksum) {
+pub fn modify_internal_info(
+    info: &mut serde_json::Map<String, serde_json::Value>,
+    checksum: &s3s::dto::Checksum,
+) {
     if let Some(checksum_crc32) = &checksum.checksum_crc32 {
-        info.insert("checksum_crc32".to_owned(), serde_json::Value::String(checksum_crc32.clone()));
+        info.insert(
+            "checksum_crc32".to_owned(),
+            serde_json::Value::String(checksum_crc32.clone()),
+        );
     }
     if let Some(checksum_crc32c) = &checksum.checksum_crc32c {
-        info.insert("checksum_crc32c".to_owned(), serde_json::Value::String(checksum_crc32c.clone()));
+        info.insert(
+            "checksum_crc32c".to_owned(),
+            serde_json::Value::String(checksum_crc32c.clone()),
+        );
     }
     if let Some(checksum_sha1) = &checksum.checksum_sha1 {
-        info.insert("checksum_sha1".to_owned(), serde_json::Value::String(checksum_sha1.clone()));
+        info.insert(
+            "checksum_sha1".to_owned(),
+            serde_json::Value::String(checksum_sha1.clone()),
+        );
     }
     if let Some(checksum_sha256) = &checksum.checksum_sha256 {
-        info.insert("checksum_sha256".to_owned(), serde_json::Value::String(checksum_sha256.clone()));
+        info.insert(
+            "checksum_sha256".to_owned(),
+            serde_json::Value::String(checksum_sha256.clone()),
+        );
     }
 }
 

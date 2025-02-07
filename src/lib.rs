@@ -17,14 +17,14 @@ mod error;
 
 mod checksum;
 mod datastore;
-mod fs;
 mod s3;
 mod s3_item_detail;
 mod settings;
+mod storage_backend;
 mod utils;
 
 pub use self::datastore::*;
 pub use self::error::*;
-pub use self::fs::StorageBackend;
 pub use self::s3_item_detail::*;
 pub use self::settings::*;
+pub use self::storage_backend::StorageBackend;
