@@ -1,13 +1,13 @@
 [package]
-name = "s3s-fs"
+name = "beggar"
 version = "0.11.0-dev"
-description = "An experimental S3 server based on file system"
+description = "An S3 server based on file system with metadata stored in Postgres"
 keywords = ["s3"]
-categories = ["web-programming", "web-programming::http-server"]
+categories = ["web-programming", "web-programming::http-server", "S3"]
 edition = "2021"
 
 [[bin]]
-name = "s3s-fs"
+name = "beggar"
 required-features = ["binary"]
 
 [features]

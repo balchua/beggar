@@ -402,21 +402,35 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         req: S3Request<CreateMultipartUploadInput>,
     ) -> S3Result<S3Response<CreateMultipartUploadOutput>> {
         let input = req.input;
-        let upload_id = self.create_upload_id(req.credentials.as_ref()).await?;
 
-        if let Some(ref metadata) = input.metadata {
-            self.save_metadata(&input.bucket, &input.key, metadata, Some(upload_id))
-                .await?;
+        // check if access key is provided
+        let access_key = self.access_key_from_creds(&req.credentials);
+        if let Some(ak) = access_key {
+            let upload_id = Uuid::new_v4().to_string();
+            let bucket = input.bucket;
+            let key = input.key;
+            let metadata = self.metadata_to_string(input.metadata);
+
+            self.create_multipart_upload(
+                upload_id.as_str(),
+                bucket.as_str(),
+                key.as_str(),
+                metadata.as_str(),
+                ak,
+            )
+            .await?;
+
+            let output = CreateMultipartUploadOutput {
+                bucket: Some(bucket),
+                key: Some(key),
+                upload_id: Some(upload_id),
+                ..Default::default()
+            };
+
+            Ok(S3Response::new(output))
+        } else {
+            Err(s3_error!(AccessDenied))
         }
-
-        let output = CreateMultipartUploadOutput {
-            bucket: Some(input.bucket),
-            key: Some(input.key),
-            upload_id: Some(upload_id.to_string()),
-            ..Default::default()
-        };
-
-        Ok(S3Response::new(output))
     }
 
     #[tracing::instrument]

@@ -1,5 +1,5 @@
 use crate::utils::hex;
-use crate::{error::*, DataStore, S3ItemDetail};
+use crate::{error::*, DataStore, MultipartUpload, S3ItemDetail};
 
 use s3s::auth::Credentials;
 use s3s::dto::{self, Checksum, Timestamp, TimestampFormat};
@@ -145,6 +145,25 @@ impl<T: DataStore> StorageBackend<T> {
         Ok(())
     }
 
+    pub(crate) fn metadata_to_string(&self, metadata: Option<dto::Metadata>) -> String {
+        match metadata {
+            Some(metadata) => {
+                let metadata = serde_json::to_string(&metadata).unwrap_or_default();
+                metadata
+            }
+            None => "{}".to_string(),
+        }
+    }
+
+    pub(crate) fn access_key_from_creds<'a>(
+        &self,
+        cred: &'a Option<Credentials>,
+    ) -> Option<&'a str> {
+        cred.as_ref()
+            .map(|c| c.access_key.as_str())
+            .or_else(|| return None)
+    }
+
     /// remove metadata from fs
     pub(crate) fn delete_metadata(
         &self,
@@ -203,17 +222,17 @@ impl<T: DataStore> StorageBackend<T> {
         self.resolve_abs_path(format!(".upload-{upload_id}.json"))
     }
 
-    pub(crate) async fn create_upload_id(&self, cred: Option<&Credentials>) -> Result<Uuid> {
-        let upload_id = Uuid::new_v4();
-        let upload_info_path = self.get_upload_info_path(&upload_id)?;
+    // pub(crate) async fn create_upload_id(&self, cred: Option<&Credentials>) -> Result<Uuid> {
+    //     let upload_id = Uuid::new_v4();
+    //     let upload_info_path = self.get_upload_info_path(&upload_id)?;
 
-        let ak: Option<&str> = cred.map(|c| c.access_key.as_str());
+    //     let ak: Option<&str> = cred.map(|c| c.access_key.as_str());
 
-        let content = serde_json::to_vec(&ak)?;
-        fs::write(&upload_info_path, &content).await?;
+    //     let content = serde_json::to_vec(&ak)?;
+    //     fs::write(&upload_info_path, &content).await?;
 
-        Ok(upload_id)
-    }
+    //     Ok(upload_id)
+    // }
 
     pub(crate) async fn verify_upload_id(
         &self,
@@ -376,6 +395,24 @@ impl<T: DataStore> StorageBackend<T> {
     pub(crate) async fn get_all_buckets(&self) -> Result<Vec<String>> {
         self.datastore.get_all_buckets().await
     }
+
+    pub(crate) async fn create_multipart_upload(
+        &self,
+        upload_id: &str,
+        bucket: &str,
+        key: &str,
+        metadata: &str,
+        access_key: &str,
+    ) -> Result<()> {
+        let upload = MultipartUpload::builder()
+            .upload_id(upload_id.to_string())
+            .bucket(bucket.to_string())
+            .key(key.to_string())
+            .metadata(metadata.to_string())
+            .access_key(access_key.to_string())
+            .build();
+        self.datastore.create_multipart_upload(&upload).await
+    }
 }
 
 pub(crate) struct FileWriter<'a> {
@@ -423,6 +460,7 @@ impl Drop for FileWriter<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::MultipartUpload;
     use async_trait::async_trait;
     use mockall::mock;
     use mockall::predicate::*;
@@ -441,6 +479,7 @@ mod tests {
                 filter: &str,
             ) -> Result<Vec<S3ItemDetail>>;
             async fn get_all_buckets(&self) -> Result<Vec<String>>;
+            async fn create_multipart_upload(&self, upload: &MultipartUpload) -> Result<()>;
         }
     }
 
@@ -483,5 +522,70 @@ mod tests {
         let result = backend.get_s3_item_detail("test_bucket", "test_key").await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_resolve_abs_path() {
+        // initialize the temp directory
+        // Create a directory inside of `env::temp_dir()`
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        let root = tmp_dir.path().as_os_str();
+        let mock_ds = MockTestDataStore::new();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let path = backend.resolve_abs_path("test_file.txt").unwrap();
+        let expected_path = tmp_dir.path().join("test_file.txt");
+        assert_eq!(path, expected_path);
+    }
+
+    #[test]
+    fn test_resolve_upload_part_path() {
+        // initialize the temp directory
+        // Create a directory inside of `env::temp_dir()`
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        let root = tmp_dir.path().as_os_str();
+        let mock_ds = MockTestDataStore::new();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let upload_id = Uuid::new_v4();
+        let part_number = 1;
+        let path = backend
+            .resolve_upload_part_path(upload_id, part_number)
+            .unwrap();
+        let expected_path = tmp_dir
+            .path()
+            .join(format!(".upload_id-{}.part-{}", upload_id, part_number));
+        assert_eq!(path, expected_path);
+    }
+
+    #[test]
+    fn test_get_object_path() {
+        // initialize the temp directory
+        // Create a directory inside of `env::temp_dir()`
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        let root = tmp_dir.path().as_os_str();
+        let mock_ds = MockTestDataStore::new();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let bucket = "test_bucket";
+        let key = "test_key.txt";
+        let path = backend.get_object_path(bucket, key).unwrap();
+        let expected_path = tmp_dir.path().join(bucket).join(key);
+        assert_eq!(path, expected_path);
+    }
+
+    #[test]
+    fn test_get_bucket_path() {
+        // initialize the temp directory
+        // Create a directory inside of `env::temp_dir()`
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        let root = tmp_dir.path().as_os_str();
+        let mock_ds = MockTestDataStore::new();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let bucket = "test_bucket";
+        let path = backend.get_bucket_path(bucket).unwrap();
+        let expected_path = tmp_dir.path().join(bucket);
+        assert_eq!(path, expected_path);
     }
 }

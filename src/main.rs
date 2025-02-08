@@ -2,9 +2,9 @@
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(clippy::needless_return)]
 
-use s3s_fs::PostgresDatastore;
-use s3s_fs::Result;
-use s3s_fs::StorageBackend;
+use beggar::PostgresDatastore;
+use beggar::Result;
+use beggar::StorageBackend;
 
 use s3s::auth::SimpleAuth;
 use s3s::service::S3ServiceBuilder;
@@ -48,7 +48,7 @@ struct Opt {
     root: PathBuf,
 }
 
-fn settings() -> Result<s3s_fs::Settings, config::ConfigError> {
+fn settings() -> Result<beggar::Settings, config::ConfigError> {
     let s = config::Config::builder()
         .add_source(config::File::with_name("config/default.yaml").required(false))
         .add_source(config::File::with_name("config/local.yaml").required(false))

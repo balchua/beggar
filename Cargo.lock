@@ -545,6 +545,51 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 
 [[package]]
+name = "beggar"
+version = "0.11.0-dev"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-s3",
+ "base64-simd",
+ "bytes",
+ "chrono",
+ "clap",
+ "config",
+ "crc32c",
+ "futures",
+ "hex-simd",
+ "hyper 1.5.1",
+ "hyper-util",
+ "md-5",
+ "mime",
+ "mockall",
+ "numeric_cast",
+ "once_cell",
+ "path-absolutize",
+ "s3s",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sqlx",
+ "std-next",
+ "tempfile",
+ "thiserror 2.0.7",
+ "time",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-error",
+ "tracing-subscriber",
+ "transform-stream",
+ "uuid",
+]
+
+[[package]]
 name = "bigdecimal"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2561,51 +2606,6 @@ dependencies = [
  "transform-stream",
  "urlencoding",
  "zeroize",
-]
-
-[[package]]
-name = "s3s-fs"
-version = "0.11.0-dev"
-dependencies = [
- "anyhow",
- "async-trait",
- "aws-config",
- "aws-credential-types",
- "aws-sdk-s3",
- "base64-simd",
- "bytes",
- "chrono",
- "clap",
- "config",
- "crc32c",
- "futures",
- "hex-simd",
- "hyper 1.5.1",
- "hyper-util",
- "md-5",
- "mime",
- "mockall",
- "numeric_cast",
- "once_cell",
- "path-absolutize",
- "s3s",
- "serde",
- "serde_json",
- "serde_yaml",
- "sqlx",
- "std-next",
- "tempfile",
- "thiserror 2.0.7",
- "time",
- "tokio",
- "tokio-util",
- "tower",
- "tower-http",
- "tracing",
- "tracing-error",
- "tracing-subscriber",
- "transform-stream",
- "uuid",
 ]
 
 [[package]]

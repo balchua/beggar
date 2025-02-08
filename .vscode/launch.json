@@ -7,16 +7,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 's3s_fs'",
+            "name": "Debug unit tests in library 'beggar'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=s3s-fs"
+                    "--package=beggar"
                 ],
                 "filter": {
-                    "name": "s3s_fs",
+                    "name": "beggar",
                     "kind": "lib"
                 }
             },
@@ -26,16 +26,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 's3s-fs'",
+            "name": "Debug executable 'beggar'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=s3s-fs",
-                    "--package=s3s-fs",
+                    "--bin=beggar",
+                    "--package=beggar",
                     "--features=binary"
                 ],
                 "filter": {
-                    "name": "s3s-fs",
+                    "name": "beggar",
                     "kind": "bin"
                 }
             },
@@ -57,16 +57,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 's3s-fs'",
+            "name": "Debug unit tests in executable 'beggar'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=s3s-fs",
-                    "--package=s3s-fs"
+                    "--bin=beggar",
+                    "--package=beggar"
                 ],
                 "filter": {
-                    "name": "s3s-fs",
+                    "name": "beggar",
                     "kind": "bin"
                 }
             },
@@ -82,7 +82,7 @@
                     "test",
                     "--no-run",
                     "--test=it_aws",
-                    "--package=s3s-fs"
+                    "--package=beggar"
                 ],
                 "filter": {
                     "name": "it_aws",

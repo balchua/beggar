@@ -6,7 +6,7 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
 
 use crate::error::Result;
-use crate::{S3ItemDetail, Settings};
+use crate::{MultipartUpload, S3ItemDetail, Settings};
 
 #[async_trait]
 pub trait DataStore: Send + Sync + 'static + std::fmt::Debug {
@@ -19,6 +19,7 @@ pub trait DataStore: Send + Sync + 'static + std::fmt::Debug {
     ) -> Result<Vec<S3ItemDetail>>;
 
     async fn get_all_buckets(&self) -> Result<Vec<String>>;
+    async fn create_multipart_upload(&self, upload: &MultipartUpload) -> Result<()>;
 }
 
 pub struct PostgresDatastore {
@@ -141,6 +142,27 @@ impl DataStore for PostgresDatastore {
         let result: Vec<String> = result_set.iter().map(|row| row.bucket.clone()).collect();
 
         Ok(result)
+    }
+
+    async fn create_multipart_upload(&self, upload: &MultipartUpload) -> Result<()> {
+        sqlx::query!(
+            r#"
+            INSERT INTO multipart_upload (upload_id, bucket, key, last_modified, metadata, access_key)
+            VALUES ($1, $2, $3, CURRENT_TIMESTAMP, $4, $5)
+            ON CONFLICT (upload_id, bucket, key) DO UPDATE
+            SET metadata = $4,
+            access_key = $5
+            "#,
+            upload.upload_id,
+            upload.bucket,
+            upload.key,
+            upload.metadata,
+            upload.access_key,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 }
 
