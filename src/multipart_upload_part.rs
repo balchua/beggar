@@ -19,7 +19,6 @@ impl MultipartUploadPart {
 pub struct MultipartUploadPartBuilder {
     upload_id: Option<String>,
     part_number: Option<i32>,
-    last_modified: Option<NaiveDateTime>,
     md5: Option<String>,
     data_location: Option<String>,
 }
@@ -32,11 +31,6 @@ impl MultipartUploadPartBuilder {
 
     pub fn part_number(mut self, part_number: i32) -> Self {
         self.part_number = Some(part_number);
-        self
-    }
-
-    pub fn last_modified(mut self, last_modified: NaiveDateTime) -> Self {
-        self.last_modified = Some(last_modified);
         self
     }
 
@@ -54,7 +48,7 @@ impl MultipartUploadPartBuilder {
         MultipartUploadPart {
             upload_id: self.upload_id.expect("upload_id must be set"),
             part_number: self.part_number.expect("part_number must be set"),
-            last_modified: self.last_modified.expect("last_modified must be set"),
+            last_modified: chrono::Utc::now().naive_utc(),
             md5: self.md5.expect("md5 must be set"),
             data_location: self.data_location.expect("data_location must be set"),
         }

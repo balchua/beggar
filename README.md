@@ -195,3 +195,165 @@ split -b 5M -a 5 --numeric-suffixes  JetBrainsMono.zip JetBrainsMono.zip.
 ```
 Note: The above command will split the file into 5MB parts. Suffixed with a number.
 The split files will be named `JetBrainsMono.zip.00000`, `JetBrainsMono.zip.00001`, `JetBrainsMono.zip.00002`, etc.
+
+
+
+```bash
+
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 1 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00000 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 2 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00001 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 3 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00002 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 4 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00003 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 5 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00004 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 6 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00005 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 7 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00006 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 8 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00007 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 9 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00008 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 10 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00009 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 11 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00010 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 12 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00011 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 13 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00012 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 14 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00013 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 15 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00014 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 16 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00015 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 17 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00016 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 18 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00017 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 19 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00018 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 20 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00019 --no-cli-pager
+aws s3api upload-part --profile dev --bucket test-buckets --key large.zip --part-number 21 --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --body JetBrainsMono.zip.00020 --no-cli-pager
+```
+
+Sample Output:
+
+Each command will return a JSON output with the ETag of the uploaded part.
+
+```json
+{
+    "ETag": "\"c54003fb4dad33b877513290e06deec4\""
+}
+```
+#### List Parts
+
+```bash
+ aws s3api list-parts --profile dev --bucket test-buckets --key large.zip --upload-id 339a0963-b299-4c9c-9577-f45e996a524a --no-cli-pager
+ ```
+
+ Sample Output:
+
+ ```json
+ {
+    "Parts": [
+        {
+            "PartNumber": 1,
+            "LastModified": "2025-02-08T03:32:42.675000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 2,
+            "LastModified": "2025-02-08T03:33:13.645000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 3,
+            "LastModified": "2025-02-08T03:33:16.934000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 4,
+            "LastModified": "2025-02-08T03:33:20.344000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 5,
+            "LastModified": "2025-02-08T03:33:23.671000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 6,
+            "LastModified": "2025-02-08T03:33:26.972000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 7,
+            "LastModified": "2025-02-08T03:33:30.399000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 8,
+            "LastModified": "2025-02-08T03:33:33.871000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 9,
+            "LastModified": "2025-02-08T03:33:37.204000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 10,
+            "LastModified": "2025-02-08T03:33:40.500000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 11,
+            "LastModified": "2025-02-08T03:33:43.770000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 12,
+            "LastModified": "2025-02-08T03:33:47.008000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 13,
+            "LastModified": "2025-02-08T03:33:50.229000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 14,
+            "LastModified": "2025-02-08T03:33:53.477000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 15,
+            "LastModified": "2025-02-08T03:33:56.748000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 16,
+            "LastModified": "2025-02-08T03:33:59.931000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 17,
+            "LastModified": "2025-02-08T03:34:03.272000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 18,
+            "LastModified": "2025-02-08T03:34:06.533000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 19,
+            "LastModified": "2025-02-08T03:34:09.853000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 20,
+            "LastModified": "2025-02-08T03:34:13.131000+00:00",
+            "Size": 5242880
+        },
+        {
+            "PartNumber": 21,
+            "LastModified": "2025-02-08T03:34:16.053000+00:00",
+            "Size": 374905
+        }
+    ],
+    "ChecksumAlgorithm": null,
+    "Initiator": null,
+    "Owner": null,
+    "StorageClass": null,
+    "ChecksumType": null
+}
+
+ ```

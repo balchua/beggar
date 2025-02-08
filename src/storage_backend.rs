@@ -1,5 +1,5 @@
 use crate::utils::hex;
-use crate::{error::*, DataStore, MultipartUpload, S3ItemDetail};
+use crate::{error::*, DataStore, MultipartUpload, MultipartUploadPart, S3ItemDetail};
 
 use s3s::auth::Credentials;
 use s3s::dto::{self, Checksum, Timestamp, TimestampFormat};
@@ -67,7 +67,7 @@ impl<T: DataStore> StorageBackend<T> {
 
     pub(crate) fn resolve_upload_part_path(
         &self,
-        upload_id: Uuid,
+        upload_id: &str,
         part_number: PartNumber,
     ) -> Result<PathBuf> {
         self.resolve_abs_path(format!(".upload_id-{upload_id}.part-{part_number}"))
@@ -250,6 +250,20 @@ impl<T: DataStore> StorageBackend<T> {
         Ok(ak.as_deref() == cred.map(|c| c.access_key.as_str()))
     }
 
+    pub(crate) async fn verify_access_key_by_upload_id(
+        &self,
+        cred: Option<&Credentials>,
+        upload_id: &str,
+    ) -> Result<bool> {
+        let access_key = self.get_access_key_by_upload_id(upload_id).await?;
+
+        if let Some(ak) = access_key {
+            Ok(ak == cred.map(|c| c.access_key.as_str()).unwrap_or_default())
+        } else {
+            Ok(false)
+        }
+    }
+
     pub(crate) async fn delete_upload_id(&self, upload_id: &Uuid) -> Result<()> {
         let upload_info_path = self.get_upload_info_path(upload_id)?;
         if upload_info_path.exists() {
@@ -411,7 +425,37 @@ impl<T: DataStore> StorageBackend<T> {
             .metadata(metadata.to_string())
             .access_key(access_key.to_string())
             .build();
-        self.datastore.create_multipart_upload(&upload).await
+        self.datastore.save_multipart_upload(&upload).await
+    }
+
+    pub(crate) async fn create_multipart_upload_part(
+        &self,
+        upload_id: &str,
+        part_number: i32,
+        md5: &str,
+        data_location: &str,
+    ) -> Result<()> {
+        let part = MultipartUploadPart::builder()
+            .upload_id(upload_id.to_string())
+            .part_number(part_number)
+            .md5(md5.to_string())
+            .data_location(data_location.to_string())
+            .build();
+        self.datastore.save_multipart_upload_part(&part).await
+    }
+
+    pub(crate) async fn get_access_key_by_upload_id(
+        &self,
+        upload_id: &str,
+    ) -> Result<Option<String>> {
+        self.datastore.get_access_key_by_upload_id(upload_id).await
+    }
+
+    pub(crate) async fn get_parts_by_upload_id(
+        &self,
+        upload_id: &str,
+    ) -> Result<Vec<MultipartUploadPart>> {
+        self.datastore.get_parts_by_upload_id(upload_id).await
     }
 }
 
@@ -461,6 +505,7 @@ impl Drop for FileWriter<'_> {
 mod tests {
     use super::*;
     use crate::MultipartUpload;
+    use crate::MultipartUploadPart;
     use async_trait::async_trait;
     use mockall::mock;
     use mockall::predicate::*;
@@ -479,7 +524,10 @@ mod tests {
                 filter: &str,
             ) -> Result<Vec<S3ItemDetail>>;
             async fn get_all_buckets(&self) -> Result<Vec<String>>;
-            async fn create_multipart_upload(&self, upload: &MultipartUpload) -> Result<()>;
+            async fn save_multipart_upload(&self, upload: &MultipartUpload) -> Result<()>;
+            async fn save_multipart_upload_part(&self, part: &MultipartUploadPart) -> Result<()>;
+            async fn get_access_key_by_upload_id(&self, upload_id: &str) -> Result<Option<String>>;
+            async fn get_parts_by_upload_id(&self, upload_id: &str) -> Result<Vec<MultipartUploadPart>>;
         }
     }
 
@@ -547,10 +595,10 @@ mod tests {
         let mock_ds = MockTestDataStore::new();
         let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
 
-        let upload_id = Uuid::new_v4();
+        let upload_id = Uuid::new_v4().to_string();
         let part_number = 1;
         let path = backend
-            .resolve_upload_part_path(upload_id, part_number)
+            .resolve_upload_part_path(upload_id.as_str(), part_number)
             .unwrap();
         let expected_path = tmp_dir
             .path()

@@ -447,18 +447,20 @@ impl<T: DataStore> S3 for StorageBackend<T> {
 
         let body = body.ok_or_else(|| s3_error!(IncompleteBody))?;
 
-        let upload_id = Uuid::parse_str(&upload_id).map_err(|_| s3_error!(InvalidRequest))?;
+        let upload_id = Uuid::parse_str(&upload_id)
+            .map_err(|_| s3_error!(InvalidRequest))?
+            .to_string();
         if self
-            .verify_upload_id(req.credentials.as_ref(), &upload_id)
+            .verify_access_key_by_upload_id(req.credentials.as_ref(), &upload_id.as_str())
             .await?
             .not()
         {
             return Err(s3_error!(AccessDenied));
         }
 
-        let file_path = self.resolve_upload_part_path(upload_id, part_number)?;
+        let file_path = self.resolve_upload_part_path(upload_id.as_str(), part_number)?;
 
-        println!("upload id: {:?}", upload_id);
+        debug!("upload id: {:?}", upload_id);
 
         let mut md5_hash = <Md5 as Digest>::new();
         let stream = body.inspect_ok(|bytes| md5_hash.update(bytes.as_ref()));
@@ -471,6 +473,14 @@ impl<T: DataStore> S3 for StorageBackend<T> {
 
         debug!(path = %file_path.display(), ?size, %md5_sum, "write file");
 
+        //Save to db
+        self.create_multipart_upload_part(
+            upload_id.as_str(),
+            part_number,
+            md5_sum.as_str(),
+            file_path.into_os_string().to_str().unwrap(),
+        )
+        .await?;
         let output = UploadPartOutput {
             e_tag: Some(format!("\"{md5_sum}\"")),
             ..Default::default()
@@ -490,48 +500,38 @@ impl<T: DataStore> S3 for StorageBackend<T> {
             ..
         } = req.input;
 
-        let mut parts: Vec<Part> = Vec::new();
-        let mut iter = try_!(fs::read_dir(&self.root).await);
+        let upload_id_str = upload_id.as_str();
+        let parts_in_db = self.get_parts_by_upload_id(upload_id_str).await?;
 
-        let prefix = format!(".upload_id-{upload_id}");
+        if parts_in_db.len() == 0 {
+            return Err(s3_error!(NoSuchUpload));
+        }
 
-        while let Some(entry) = try_!(iter.next_entry().await) {
-            let file_type = try_!(entry.file_type().await);
-            if file_type.is_file().not() {
-                continue;
-            }
+        let mut parts_to_return: Vec<Part> = Vec::new();
+        for part_item in parts_in_db {
+            debug!("part: {:?}", part_item);
+            let last_modified = self.to_timestamp(&part_item.last_modified);
+            let part_number = part_item.part_number;
+            let data_location = part_item.data_location.clone();
 
-            let file_name = entry.file_name();
-            let Some(name) = file_name.to_str() else {
-                continue;
-            };
-
-            let Some(part_segment) = name.strip_prefix(&prefix) else {
-                continue;
-            };
-            let Some(part_number) = part_segment.strip_prefix(".part-") else {
-                continue;
-            };
-            let part_number = part_number.parse::<i32>().unwrap();
-
-            let file_meta = try_!(entry.metadata().await);
-            let last_modified = Timestamp::from(try_!(file_meta.modified()));
-            let size = try_!(i64::try_from(file_meta.len()));
-
+            let file = fs::File::open(&data_location)
+                .await
+                .map_err(|_| s3_error!(NoSuchUpload))?;
+            let file_metadata = try_!(file.metadata().await);
+            let size = try_!(i64::try_from(file_metadata.len()));
             let part = Part {
-                last_modified: Some(last_modified),
+                last_modified: last_modified,
                 part_number: Some(part_number),
                 size: Some(size),
                 ..Default::default()
             };
-            parts.push(part);
+            parts_to_return.push(part);
         }
-
         let output = ListPartsOutput {
             bucket: Some(bucket),
             key: Some(key),
             upload_id: Some(upload_id),
-            parts: Some(parts),
+            parts: Some(parts_to_return),
             ..Default::default()
         };
         Ok(S3Response::new(output))
@@ -582,8 +582,8 @@ impl<T: DataStore> S3 for StorageBackend<T> {
             if part_number != cnt {
                 return Err(s3_error!(InvalidRequest, "invalid part order"));
             }
-
-            let part_path = self.resolve_upload_part_path(upload_id, part_number)?;
+            let upload_id_str = upload_id.to_string();
+            let part_path = self.resolve_upload_part_path(upload_id_str.as_str(), part_number)?;
 
             let mut reader = try_!(fs::File::open(&part_path).await);
             let size = try_!(tokio::io::copy(&mut reader, &mut file_writer.writer()).await);

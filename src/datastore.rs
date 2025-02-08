@@ -6,7 +6,7 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
 
 use crate::error::Result;
-use crate::{MultipartUpload, S3ItemDetail, Settings};
+use crate::{MultipartUpload, MultipartUploadPart, S3ItemDetail, Settings};
 
 #[async_trait]
 pub trait DataStore: Send + Sync + 'static + std::fmt::Debug {
@@ -19,7 +19,10 @@ pub trait DataStore: Send + Sync + 'static + std::fmt::Debug {
     ) -> Result<Vec<S3ItemDetail>>;
 
     async fn get_all_buckets(&self) -> Result<Vec<String>>;
-    async fn create_multipart_upload(&self, upload: &MultipartUpload) -> Result<()>;
+    async fn save_multipart_upload(&self, upload: &MultipartUpload) -> Result<()>;
+    async fn save_multipart_upload_part(&self, part: &MultipartUploadPart) -> Result<()>;
+    async fn get_access_key_by_upload_id(&self, upload_id: &str) -> Result<Option<String>>;
+    async fn get_parts_by_upload_id(&self, upload_id: &str) -> Result<Vec<MultipartUploadPart>>;
 }
 
 pub struct PostgresDatastore {
@@ -144,7 +147,7 @@ impl DataStore for PostgresDatastore {
         Ok(result)
     }
 
-    async fn create_multipart_upload(&self, upload: &MultipartUpload) -> Result<()> {
+    async fn save_multipart_upload(&self, upload: &MultipartUpload) -> Result<()> {
         sqlx::query!(
             r#"
             INSERT INTO multipart_upload (upload_id, bucket, key, last_modified, metadata, access_key)
@@ -163,6 +166,58 @@ impl DataStore for PostgresDatastore {
         .await?;
 
         Ok(())
+    }
+
+    async fn save_multipart_upload_part(&self, part: &MultipartUploadPart) -> Result<()> {
+        sqlx::query!(
+            r#"
+            INSERT INTO multipart_upload_part (upload_id, part_number, last_modified, md5, data_location)
+            VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4)
+            ON CONFLICT (upload_id, part_number) DO UPDATE
+            SET md5 = $3,
+            data_location = $4
+            "#,
+            part.upload_id,
+            part.part_number,
+            part.md5,
+            part.data_location,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn get_access_key_by_upload_id(&self, upload_id: &str) -> Result<Option<String>> {
+        let result = sqlx::query!(
+            r#"
+            SELECT access_key
+            FROM multipart_upload
+            WHERE upload_id = $1
+            "#,
+            upload_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(result.map(|row| row.access_key))
+    }
+
+    async fn get_parts_by_upload_id(&self, upload_id: &str) -> Result<Vec<MultipartUploadPart>> {
+        let result = sqlx::query_as!(
+            MultipartUploadPart,
+            r#"
+            SELECT upload_id, part_number, md5, last_modified,data_location
+            FROM multipart_upload_part
+            WHERE upload_id = $1
+            ORDER BY part_number ASC
+            "#,
+            upload_id
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(result)
     }
 }
 

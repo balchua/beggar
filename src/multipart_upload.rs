@@ -22,7 +22,6 @@ pub struct MultipartUploadBuilder {
     bucket: Option<String>,
     key: Option<String>,
     metadata: Option<String>,
-    last_modified: Option<chrono::NaiveDateTime>,
     access_key: Option<String>,
 }
 
@@ -44,11 +43,6 @@ impl MultipartUploadBuilder {
 
     pub fn metadata(mut self, metadata: String) -> Self {
         self.metadata = Some(metadata);
-        self
-    }
-
-    pub fn last_modified(mut self, last_modified: chrono::NaiveDateTime) -> Self {
-        self.last_modified = Some(last_modified);
         self
     }
 
