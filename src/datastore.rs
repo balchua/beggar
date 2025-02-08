@@ -23,6 +23,11 @@ pub trait DataStore: Send + Sync + 'static + std::fmt::Debug {
     async fn save_multipart_upload_part(&self, part: &MultipartUploadPart) -> Result<()>;
     async fn get_access_key_by_upload_id(&self, upload_id: &str) -> Result<Option<String>>;
     async fn get_parts_by_upload_id(&self, upload_id: &str) -> Result<Vec<MultipartUploadPart>>;
+    async fn get_multipart_upload_by_upload_id(
+        &self,
+        upload_id: &str,
+    ) -> Result<Option<MultipartUpload>>;
+    async fn delete_multipart_upload_by_upload_id(&self, upload_id: &str) -> Result<()>;
 }
 
 pub struct PostgresDatastore {
@@ -218,6 +223,39 @@ impl DataStore for PostgresDatastore {
         .await?;
 
         Ok(result)
+    }
+
+    async fn get_multipart_upload_by_upload_id(
+        &self,
+        upload_id: &str,
+    ) -> Result<Option<MultipartUpload>> {
+        let result = sqlx::query_as!(
+            MultipartUpload,
+            r#"
+            SELECT upload_id, bucket, key, last_modified, metadata, access_key
+            FROM multipart_upload
+            WHERE upload_id = $1
+            "#,
+            upload_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(result)
+    }
+
+    async fn delete_multipart_upload_by_upload_id(&self, upload_id: &str) -> Result<()> {
+        sqlx::query!(
+            r#"
+            DELETE FROM multipart_upload
+            WHERE upload_id = $1
+            "#,
+            upload_id
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 }
 

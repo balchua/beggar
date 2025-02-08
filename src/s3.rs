@@ -25,30 +25,6 @@ use stdx::default::default;
 use tracing::debug;
 use uuid::Uuid;
 
-// fn normalize_path(path: &Path, delimiter: &str) -> Option<String> {
-//     let mut normalized = String::new();
-//     let mut first = true;
-//     for component in path.components() {
-//         match component {
-//             Component::RootDir
-//             | Component::CurDir
-//             | Component::ParentDir
-//             | Component::Prefix(_) => {
-//                 return None;
-//             }
-//             Component::Normal(name) => {
-//                 let name = name.to_str()?;
-//                 if !first {
-//                     normalized.push_str(delimiter);
-//                 }
-//                 normalized.push_str(name);
-//                 first = false;
-//             }
-//         }
-//     }
-//     Some(normalized)
-// }
-
 /// <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Range>
 fn fmt_content_range(start: u64, end_inclusive: u64, size: u64) -> String {
     format!("bytes {start}-{end_inclusive}/{size}")
@@ -403,6 +379,13 @@ impl<T: DataStore> S3 for StorageBackend<T> {
     ) -> S3Result<S3Response<CreateMultipartUploadOutput>> {
         let input = req.input;
 
+        // check if bucket exist
+        let bucket_path = self.get_bucket_path(&input.bucket)?;
+
+        if bucket_path.exists().not() {
+            return Err(s3_error!(NoSuchBucket));
+        }
+
         // check if access key is provided
         let access_key = self.access_key_from_creds(&req.credentials);
         if let Some(ak) = access_key {
@@ -482,7 +465,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         )
         .await?;
         let output = UploadPartOutput {
-            e_tag: Some(format!("\"{md5_sum}\"")),
+            e_tag: Some(format!("{md5_sum}")),
             ..Default::default()
         };
         Ok(S3Response::new(output))
@@ -513,6 +496,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
             let last_modified = self.to_timestamp(&part_item.last_modified);
             let part_number = part_item.part_number;
             let data_location = part_item.data_location.clone();
+            let etag = part_item.md5.clone();
 
             let file = fs::File::open(&data_location)
                 .await
@@ -523,6 +507,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
                 last_modified: last_modified,
                 part_number: Some(part_number),
                 size: Some(size),
+                e_tag: Some(etag),
                 ..Default::default()
             };
             parts_to_return.push(part);
@@ -544,67 +529,81 @@ impl<T: DataStore> S3 for StorageBackend<T> {
     ) -> S3Result<S3Response<CompleteMultipartUploadOutput>> {
         let CompleteMultipartUploadInput {
             multipart_upload,
-            bucket,
-            key,
             upload_id,
             ..
         } = req.input;
 
-        let Some(multipart_upload) = multipart_upload else {
+        let Some(_multipart_upload) = multipart_upload else {
             return Err(s3_error!(InvalidPart));
         };
 
-        let upload_id = Uuid::parse_str(&upload_id).map_err(|_| s3_error!(InvalidRequest))?;
-        if self
-            .verify_upload_id(req.credentials.as_ref(), &upload_id)
-            .await?
-            .not()
-        {
-            return Err(s3_error!(AccessDenied));
-        }
+        let upload_id = Uuid::parse_str(&upload_id)
+            .map_err(|_| s3_error!(InvalidRequest))?
+            .to_string();
 
-        self.delete_upload_id(&upload_id).await?;
+        let multipart_upload = self
+            .get_multipart_upload_by_upload_id(upload_id.as_str())
+            .await?;
 
-        if let Ok(Some(metadata)) = self.load_metadata(&bucket, &key, Some(upload_id)).await {
-            self.save_metadata(&bucket, &key, &metadata, None).await?;
-            let _ = self.delete_metadata(&bucket, &key, Some(upload_id));
-        }
-
-        let object_path = self.get_object_path(&bucket, &key)?;
-        let mut file_writer = self.prepare_file_write(&object_path).await?;
-
-        let mut cnt: i32 = 0;
-        for part in multipart_upload.parts.into_iter().flatten() {
-            let part_number = part
-                .part_number
-                .ok_or_else(|| s3_error!(InvalidRequest, "missing part number"))?;
-            cnt += 1;
-            if part_number != cnt {
-                return Err(s3_error!(InvalidRequest, "invalid part order"));
+        if let Some(m) = multipart_upload {
+            if self
+                .verify_access_key_by_upload_id(req.credentials.as_ref(), &upload_id)
+                .await?
+                .not()
+            {
+                return Err(s3_error!(AccessDenied));
             }
-            let upload_id_str = upload_id.to_string();
-            let part_path = self.resolve_upload_part_path(upload_id_str.as_str(), part_number)?;
 
-            let mut reader = try_!(fs::File::open(&part_path).await);
-            let size = try_!(tokio::io::copy(&mut reader, &mut file_writer.writer()).await);
+            let metadata = self.metadata_from_string(m.metadata.as_str());
+            let bucket = m.bucket;
+            let key = m.key;
 
-            debug!(from = %part_path.display(), tmp = %file_writer.tmp_path().display(), to = %file_writer.dest_path().display(), ?size, "write file");
-            try_!(fs::remove_file(&part_path).await);
+            let object_path = self.get_object_path(&bucket, &key)?;
+            let mut file_writer = self.prepare_file_write(&object_path).await?;
+
+            //get all the parts
+            let parts = self.get_parts_by_upload_id(upload_id.as_str()).await?;
+
+            for part in parts {
+                let data_location = part.data_location;
+
+                let mut reader = try_!(fs::File::open(&data_location).await);
+                let size = try_!(tokio::io::copy(&mut reader, &mut file_writer.writer()).await);
+                debug!(from = %data_location, tmp = %file_writer.tmp_path().display(), to = %file_writer.dest_path().display(), ?size, "write file");
+                try_!(fs::remove_file(&data_location).await);
+            }
+
+            file_writer.done().await?;
+
+            let file_size = try_!(fs::metadata(&object_path).await).len();
+            let md5_sum = self.get_md5_sum(&bucket, &key).await?;
+
+            debug!(?md5_sum, path = %object_path.display(), size = ?file_size, "file md5 sum");
+
+            // Insert to the s3_item_detail table
+            self.save_s3_item_detail(
+                bucket.as_str(),
+                key.as_str(),
+                md5_sum.as_str(),
+                &Some(metadata),
+                InternalInfo::default(),
+            )
+            .await?;
+
+            //finally delete the multipart upload
+            self.delete_multipart_upload_by_upload_id(upload_id.as_str())
+                .await?;
+
+            let output = CompleteMultipartUploadOutput {
+                bucket: Some(bucket),
+                key: Some(key),
+                e_tag: Some(format!("{md5_sum}")),
+                ..Default::default()
+            };
+            Ok(S3Response::new(output))
+        } else {
+            Err(s3_error!(NoSuchUpload))
         }
-        file_writer.done().await?;
-
-        let file_size = try_!(fs::metadata(&object_path).await).len();
-        let md5_sum = self.get_md5_sum(&bucket, &key).await?;
-
-        debug!(?md5_sum, path = %object_path.display(), size = ?file_size, "file md5 sum");
-
-        let output = CompleteMultipartUploadOutput {
-            bucket: Some(bucket),
-            key: Some(key),
-            e_tag: Some(format!("\"{md5_sum}\"")),
-            ..Default::default()
-        };
-        Ok(S3Response::new(output))
     }
 
     #[tracing::instrument]
@@ -619,36 +618,38 @@ impl<T: DataStore> S3 for StorageBackend<T> {
             ..
         } = req.input;
 
-        let upload_id = Uuid::parse_str(&upload_id).map_err(|_| s3_error!(InvalidRequest))?;
+        // check if bucket exist
+        let bucket_path = self.get_bucket_path(&bucket)?;
+
+        if bucket_path.exists().not() {
+            return Err(s3_error!(NoSuchBucket));
+        }
+        let upload_id = Uuid::parse_str(&upload_id)
+            .map_err(|_| s3_error!(InvalidRequest))?
+            .to_string();
+
         if self
-            .verify_upload_id(req.credentials.as_ref(), &upload_id)
+            .verify_access_key_by_upload_id(req.credentials.as_ref(), upload_id.as_str())
             .await?
             .not()
         {
             return Err(s3_error!(AccessDenied));
         }
 
-        let _ = self.delete_metadata(&bucket, &key, Some(upload_id));
+        let parts = self.get_parts_by_upload_id(upload_id.as_str()).await?;
 
-        let prefix = format!(".upload_id-{upload_id}");
-        let mut iter = try_!(fs::read_dir(&self.root).await);
-        while let Some(entry) = try_!(iter.next_entry().await) {
-            let file_type = try_!(entry.file_type().await);
-            if file_type.is_file().not() {
-                continue;
-            }
-
-            let file_name = entry.file_name();
-            let Some(name) = file_name.to_str() else {
-                continue;
-            };
-
-            if name.starts_with(&prefix) {
-                try_!(fs::remove_file(entry.path()).await);
-            }
+        if parts.len() <= 0 {
+            return Err(s3_error!(NoSuchUpload));
         }
 
-        self.delete_upload_id(&upload_id).await?;
+        for part in parts {
+            let data_location = part.data_location;
+
+            try_!(fs::remove_file(&data_location).await);
+        }
+
+        self.delete_multipart_upload_by_upload_id(upload_id.as_str())
+            .await?;
 
         debug!(bucket = %bucket, key = %key, upload_id = %upload_id, "multipart upload aborted");
 
