@@ -65,7 +65,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
             let metadata = d.metadata;
             let internal_info = d.internal_info;
 
-            let object_path = self.resolve_abs_path(data_location)?;
+            let object_path = resolve_abs_path(&self.root, data_location)?;
             let mut file = fs::File::open(&object_path)
                 .await
                 .map_err(|e| s3_error!(e, NoSuchKey))?;
@@ -107,7 +107,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
                 None => default(),
             };
 
-            let last_modified_timestamp = self.to_timestamp(&last_modified);
+            let last_modified_timestamp = to_timestamp(&last_modified);
 
             debug!("last modified in rfc 3339 format {:?}", last_modified,);
             let output = GetObjectOutput {
@@ -158,14 +158,14 @@ impl<T: DataStore> S3 for StorageBackend<T> {
             let data_location = d.data_location;
             let metadata = d.metadata;
 
-            let object_path = self.resolve_abs_path(data_location)?;
+            let object_path = resolve_abs_path(&self.root, data_location)?;
             if !object_path.exists() {
                 return Err(s3_error!(NoSuchBucket));
             }
             let file_metadata = try_!(fs::metadata(object_path).await);
             let file_len = file_metadata.len();
 
-            let last_modified_timestamp = self.to_timestamp(&last_modified);
+            let last_modified_timestamp = to_timestamp(&last_modified);
             // TODO: detect content type
             let content_type = mime::APPLICATION_OCTET_STREAM;
 
@@ -193,7 +193,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         let buckets_in_db = self.get_all_buckets().await?;
 
         for bucket in &buckets_in_db {
-            let path = self.resolve_abs_path(bucket)?;
+            let path = resolve_abs_path(&self.root, bucket)?;
             if path.exists() {
                 let metadata = try_!(fs::metadata(path).await);
                 let created =
@@ -251,9 +251,9 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         let mut objects: Vec<Object> = default();
         for item in items {
             let key = item.key.clone();
-            let last_modified = self.to_timestamp(&item.last_modified);
+            let last_modified = to_timestamp(&item.last_modified);
             let data_location = item.data_location.clone();
-            let path = self.resolve_abs_path(data_location)?;
+            let path = resolve_abs_path(&self.root, data_location)?;
 
             if path.exists() {
                 let file_metadata = try_!(fs::metadata(path).await);
@@ -394,7 +394,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
             let key = input.key;
             let metadata = self.metadata_to_string(input.metadata);
 
-            self.create_multipart_upload(
+            self.save_multipart_upload(
                 upload_id.as_str(),
                 bucket.as_str(),
                 key.as_str(),
@@ -457,7 +457,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         debug!(path = %file_path.display(), ?size, %md5_sum, "write file");
 
         //Save to db
-        self.create_multipart_upload_part(
+        self.save_multipart_upload_part(
             upload_id.as_str(),
             part_number,
             md5_sum.as_str(),
@@ -493,7 +493,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         let mut parts_to_return: Vec<Part> = Vec::new();
         for part_item in parts_in_db {
             debug!("part: {:?}", part_item);
-            let last_modified = self.to_timestamp(&part_item.last_modified);
+            let last_modified = to_timestamp(&part_item.last_modified);
             let part_number = part_item.part_number;
             let data_location = part_item.data_location.clone();
             let etag = part_item.md5.clone();
@@ -656,5 +656,574 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         Ok(S3Response::new(AbortMultipartUploadOutput {
             ..Default::default()
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use crate::error::Result;
+    use crate::DataStore;
+    use crate::MultipartUpload;
+    use crate::MultipartUploadPart;
+    use crate::S3ItemDetail;
+    use async_trait::async_trait;
+    // use aws_credential_types::Credentials;
+    use mockall::mock;
+    use mockall::predicate::*;
+
+    use s3s::auth::Credentials;
+    use s3s::auth::SecretKey;
+    use tempfile::tempdir;
+
+    mock! {
+        #[derive(Debug)]
+        pub TestDataStore {}
+        #[async_trait]
+        impl DataStore for TestDataStore {
+            async fn save_s3_item_detail(&self, item: &S3ItemDetail) -> Result<()>;
+            async fn get_s3_item_detail(&self, bucket: &str, key: &str) -> Result<Option<S3ItemDetail>>;
+            async fn get_s3_item_detail_with_filter(
+                &self,
+                bucket: &str,
+                filter: &str,
+            ) -> Result<Vec<S3ItemDetail>>;
+            async fn get_all_buckets(&self) -> Result<Vec<String>>;
+            async fn save_multipart_upload(&self, upload: &MultipartUpload) -> Result<()>;
+            async fn save_multipart_upload_part(&self, part: &MultipartUploadPart) -> Result<()>;
+            async fn get_access_key_by_upload_id(&self, upload_id: &str) -> Result<Option<String>>;
+            async fn get_parts_by_upload_id(&self, upload_id: &str) -> Result<Vec<MultipartUploadPart>>;
+            async fn get_multipart_upload_by_upload_id(
+                &self,
+                upload_id: &str,
+            ) -> Result<Option<MultipartUpload>>;
+            async fn delete_multipart_upload_by_upload_id(&self, upload_id: &str) -> Result<()>;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_object() {
+        let mut mock_ds = MockTestDataStore::new();
+        mock_ds
+            .expect_get_s3_item_detail()
+            .with(eq("test_bucket"), eq("test_key"))
+            .times(1)
+            .returning(|_, _| {
+                // let fixed_time = time::macros::datetime!(2025-02-09 09:48:13 UTC);
+                let current_time = chrono::Utc::now();
+                Ok(Some(S3ItemDetail {
+                    bucket: "test_bucket".to_string(),
+                    key: "test_key".to_string(),
+                    e_tag: "test_etag".to_string(),
+                    last_modified: current_time.naive_utc(),
+                    data_location: "test_bucket/test_key".to_string(),
+                    metadata: "{}".to_string(),
+                    internal_info: "{}".to_string(),
+                }))
+            });
+
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        let root = tmp_dir.path().as_os_str();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let object_path = backend.get_object_path("test_bucket", "test_key").unwrap();
+        tokio::fs::create_dir_all(object_path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&object_path, "test content")
+            .await
+            .unwrap();
+
+        let input = GetObjectInput::builder()
+            .bucket("test_bucket".to_owned())
+            .key("test_key".to_owned())
+            .build()
+            .unwrap();
+
+        let req = S3Request::new(input);
+
+        let result = backend.get_object(req).await.expect("get_object failed");
+
+        assert_eq!(result.output.e_tag, Some("test_etag".to_string()));
+        assert_eq!(result.output.content_length, Some(12));
+    }
+
+    #[tokio::test]
+    async fn test_get_bucket_location() {
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        let root = tmp_dir.path().as_os_str();
+        let mock_ds = MockTestDataStore::new();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let bucket_path = backend.get_bucket_path("test_bucket").unwrap();
+        tokio::fs::create_dir_all(&bucket_path).await.unwrap();
+
+        let input = GetBucketLocationInput::builder()
+            .bucket("test_bucket".to_string())
+            .build()
+            .unwrap();
+
+        let req = S3Request::new(input);
+
+        let result = backend.get_bucket_location(req).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_head_bucket() {
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        let root = tmp_dir.path().as_os_str();
+        let mock_ds = MockTestDataStore::new();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let bucket_path = backend.get_bucket_path("test_bucket").unwrap();
+        tokio::fs::create_dir_all(&bucket_path).await.unwrap();
+
+        let input = HeadBucketInput::builder()
+            .bucket("test_bucket".to_string())
+            .build()
+            .unwrap();
+
+        let req = S3Request::new(input);
+
+        let result = backend.head_bucket(req).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_head_object() {
+        let mut mock_ds = MockTestDataStore::new();
+        mock_ds
+            .expect_get_s3_item_detail()
+            .with(eq("test_bucket"), eq("test_key"))
+            .times(1)
+            .returning(|_, _| {
+                // let fixed_time = time::macros::datetime!(2025-02-09 09:48:13 UTC);
+                let current_time = chrono::Utc::now();
+                Ok(Some(S3ItemDetail {
+                    bucket: "test_bucket".to_string(),
+                    key: "test_key".to_string(),
+                    e_tag: "test_etag".to_string(),
+                    last_modified: current_time.naive_utc(),
+                    data_location: "test_bucket/test_key".to_string(),
+                    metadata: "{}".to_string(),
+                    internal_info: "{}".to_string(),
+                }))
+            });
+
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        let root = tmp_dir.path().as_os_str();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let object_path = backend.get_object_path("test_bucket", "test_key").unwrap();
+        tokio::fs::create_dir_all(object_path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&object_path, "test content")
+            .await
+            .unwrap();
+
+        let input = HeadObjectInput::builder()
+            .bucket("test_bucket".to_string())
+            .key("test_key".to_string())
+            .build()
+            .unwrap();
+
+        let req = S3Request::new(input);
+
+        let result = backend.head_object(req).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_list_buckets() {
+        let mut mock_ds = MockTestDataStore::new();
+        mock_ds
+            .expect_get_all_buckets()
+            .times(1)
+            .returning(|| Ok(vec!["test_bucket".to_string()]));
+
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        let root = tmp_dir.path().as_os_str();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let bucket_path = backend.get_bucket_path("test_bucket").unwrap();
+        tokio::fs::create_dir_all(&bucket_path).await.unwrap();
+
+        let input = ListBucketsInput::builder().build().unwrap();
+        let req = S3Request::new(input);
+
+        let result = backend.list_buckets(req).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_list_objects_v2() {
+        let mut mock_ds = MockTestDataStore::new();
+        mock_ds
+            .expect_get_s3_item_detail_with_filter()
+            .with(eq("test_bucket"), eq(""))
+            .times(1)
+            .returning(|_, _| {
+                let now = chrono::Utc::now();
+                Ok(vec![S3ItemDetail {
+                    bucket: "test_bucket".to_string(),
+                    key: "test_key".to_string(),
+                    e_tag: "test_etag".to_string(),
+                    last_modified: now.naive_utc(),
+                    data_location: "test_bucket/test_key".to_string(),
+                    metadata: "{}".to_string(),
+                    internal_info: "{}".to_string(),
+                }])
+            });
+
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        let root = tmp_dir.path().as_os_str();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let object_path = backend.get_object_path("test_bucket", "test_key").unwrap();
+        tokio::fs::create_dir_all(object_path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&object_path, "test content")
+            .await
+            .unwrap();
+
+        let input = ListObjectsV2Input::builder()
+            .bucket("test_bucket".to_string())
+            .prefix(Some("".to_string()))
+            .build()
+            .unwrap();
+
+        let req = S3Request::new(input);
+
+        let result = backend.list_objects_v2(req).await.unwrap();
+        assert!(result.output.contents.is_some());
+        assert_eq!(result.output.contents.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_put_object() {
+        let mut mock_ds = MockTestDataStore::new();
+        mock_ds
+            .expect_save_s3_item_detail()
+            .times(1)
+            .returning(|_| Ok(()));
+
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        let root = tmp_dir.path().as_os_str();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let object_path = backend.get_object_path("test_bucket", "test_key").unwrap();
+        tokio::fs::create_dir_all(object_path.parent().unwrap())
+            .await
+            .unwrap();
+
+        let body = create_streaming_blob(&tmp_dir).await;
+
+        let input = PutObjectInput::builder()
+            .bucket("test_bucket".to_string())
+            .key("test_key".to_string())
+            .body(Some(body))
+            .build()
+            .unwrap();
+
+        let req = S3Request::new(input);
+
+        let result = backend.put_object(req).await;
+        assert!(result.is_ok());
+    }
+
+    async fn create_streaming_blob(tmp_dir: &tempfile::TempDir) -> StreamingBlob {
+        let mut temp_file = tokio::fs::File::create(tmp_dir.path().join("temp_file.txt"))
+            .await
+            .unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut temp_file, b"test content")
+            .await
+            .unwrap();
+        tokio::io::AsyncWriteExt::flush(&mut temp_file)
+            .await
+            .unwrap();
+
+        let temp_file = tokio::fs::File::open(tmp_dir.path().join("temp_file.txt"))
+            .await
+            .unwrap();
+        let stream = ReaderStream::new(temp_file);
+        StreamingBlob::wrap(stream)
+    }
+
+    #[tokio::test]
+    async fn test_create_multipart_upload() {
+        let mut mock_ds = MockTestDataStore::new();
+        mock_ds
+            .expect_save_multipart_upload()
+            .times(1)
+            .returning(|_| Ok(()));
+
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        let root = tmp_dir.path().as_os_str();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let bucket_path = backend.get_bucket_path("test_bucket").unwrap();
+        tokio::fs::create_dir_all(&bucket_path).await.unwrap();
+        let bucket_name = "test_bucket";
+        let key = "test_key";
+
+        let metadata = serde_json::from_str(r#"{"key1": "value1"}"#).ok();
+
+        let input = CreateMultipartUploadInput::builder()
+            .bucket(bucket_name.to_string())
+            .key(key.to_string())
+            .metadata(metadata)
+            .build()
+            .unwrap();
+
+        let req = build_s3_request(input);
+        // S3Request::new(input);
+        // let req = S3Request::new(input);
+
+        let result = backend.create_multipart_upload(req).await;
+
+        assert!(result.is_ok());
+    }
+
+    fn build_s3_credentials() -> Credentials {
+        let secret = SecretKey::from("secret");
+        Credentials {
+            access_key: "test_access".to_string(),
+            secret_key: secret,
+        }
+    }
+    fn build_s3_request<T>(input: T) -> S3Request<T> {
+        let creds = build_s3_credentials();
+        let mut req = S3Request::new(input);
+        req.credentials = Some(creds);
+        req
+    }
+
+    #[tokio::test]
+    async fn test_list_parts() {
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        tokio::fs::write(tmp_dir.path().join("test_data_location"), "test content 1")
+            .await
+            .unwrap();
+        tokio::fs::write(
+            tmp_dir.path().join("test_data_location_2"),
+            "test content 2",
+        )
+        .await
+        .unwrap();
+        let data_location1 = tmp_dir
+            .path()
+            .join("test_data_location")
+            .display()
+            .to_string();
+        let data_location2 = tmp_dir
+            .path()
+            .join("test_data_location_2")
+            .display()
+            .to_string();
+        let mut mock_ds = MockTestDataStore::new();
+        mock_ds
+            .expect_get_parts_by_upload_id()
+            .with(eq("test_upload_id"))
+            .times(1)
+            .returning(move |_| {
+                let now = chrono::Utc::now().naive_utc();
+
+                Ok(vec![
+                    MultipartUploadPart {
+                        upload_id: "test_upload_id".to_string(),
+                        part_number: 1,
+                        md5: "test_md5".to_string(),
+                        data_location: data_location1.clone(),
+                        last_modified: now,
+                    },
+                    MultipartUploadPart {
+                        upload_id: "test_upload_id".to_string(),
+                        part_number: 2,
+                        md5: "test_md5_2".to_string(),
+                        data_location: data_location2.clone(),
+                        last_modified: now,
+                    },
+                ])
+            });
+
+        let root = tmp_dir.path().as_os_str();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let input = ListPartsInput::builder()
+            .bucket("test_bucket".to_string())
+            .key("test_key".to_string())
+            .upload_id("test_upload_id".to_string())
+            .build()
+            .unwrap();
+
+        let req = S3Request::new(input);
+
+        let result = backend.list_parts(req).await.unwrap();
+        assert!(result.output.parts.is_some());
+        assert_eq!(result.output.parts.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_complete_multipart_upload() {
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        tokio::fs::write(tmp_dir.path().join("test_data_location"), "test content 1")
+            .await
+            .unwrap();
+        tokio::fs::write(
+            tmp_dir.path().join("test_data_location_2"),
+            "test content 2",
+        )
+        .await
+        .unwrap();
+        let data_location1 = tmp_dir
+            .path()
+            .join("test_data_location")
+            .display()
+            .to_string();
+        let data_location2 = tmp_dir
+            .path()
+            .join("test_data_location_2")
+            .display()
+            .to_string();
+        let upload_id = Uuid::new_v4().to_string();
+        let upload_id_clone = upload_id.clone();
+
+        let bucket_name = "test_bucket";
+        let key_name = "test_key";
+        let content = "test_content";
+
+        let mut mock_ds = MockTestDataStore::new();
+        mock_ds
+            .expect_get_multipart_upload_by_upload_id()
+            .times(1)
+            .returning(move |_| {
+                Ok(Some(MultipartUpload {
+                    upload_id: upload_id_clone.to_string(),
+                    bucket: bucket_name.to_string(),
+                    key: key_name.to_string(),
+                    metadata: "{}".to_string(),
+                    access_key: "test_access".to_string(),
+                    last_modified: chrono::Utc::now().naive_utc(),
+                }))
+            });
+
+        mock_ds
+            .expect_get_access_key_by_upload_id()
+            .times(1)
+            .returning(|_| Ok(Some("test_access".to_string())));
+
+        let upload_id_clone = upload_id.clone();
+        mock_ds
+            .expect_get_parts_by_upload_id()
+            .with(eq(upload_id_clone.clone()))
+            .times(1)
+            .returning(move |_| {
+                let now = chrono::Utc::now().naive_utc();
+
+                Ok(vec![
+                    MultipartUploadPart {
+                        upload_id: upload_id_clone.to_string(),
+                        part_number: 1,
+                        md5: "test_md5".to_string(),
+                        data_location: data_location1.clone(),
+                        last_modified: now,
+                    },
+                    MultipartUploadPart {
+                        upload_id: upload_id_clone.to_string(),
+                        part_number: 2,
+                        md5: "test_md5_2".to_string(),
+                        data_location: data_location2.clone(),
+                        last_modified: now,
+                    },
+                ])
+            });
+
+        mock_ds
+            .expect_save_s3_item_detail()
+            .times(1)
+            .returning(|_| Ok(()));
+
+        mock_ds
+            .expect_delete_multipart_upload_by_upload_id()
+            .times(1)
+            .returning(|_| Ok(()));
+
+        let root = tmp_dir.path().as_os_str();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let md5sum = format!("{:?}", md5::Md5::digest(content.as_bytes()));
+        let field = Some(CompletedMultipartUpload {
+            parts: Some(vec![CompletedPart {
+                e_tag: Some(md5sum.to_string()),
+                part_number: Some(1),
+                ..Default::default()
+            }]),
+        });
+        let input = CompleteMultipartUploadInput::builder()
+            .bucket(bucket_name.to_string())
+            .key(key_name.to_string())
+            .upload_id(upload_id.to_string())
+            .multipart_upload(field)
+            .build()
+            .unwrap();
+        let bucket_path = backend.get_bucket_path(bucket_name).unwrap();
+        tokio::fs::create_dir_all(&bucket_path).await.unwrap();
+
+        let object_path = backend.get_object_path(bucket_name, key_name).unwrap();
+        tokio::fs::create_dir_all(object_path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&object_path, content).await.unwrap();
+        let req = build_s3_request(input);
+
+        let result = backend.complete_multipart_upload(req).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_abort_multipart_upload() {
+        let mut mock_ds = MockTestDataStore::new();
+        mock_ds
+            .expect_get_parts_by_upload_id()
+            .times(1)
+            .returning(|_| Ok(vec![]));
+
+        mock_ds
+            .expect_get_access_key_by_upload_id()
+            .times(1)
+            .returning(|_| Ok(Some("test_access".to_string())));
+
+        let tmp_dir = tempdir().expect("tempdir created successfully");
+        let root = tmp_dir.path().as_os_str();
+        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+
+        let bucket_name = "test_bucket";
+        let key_name = "test_key";
+        let upload_id = Uuid::new_v4().to_string();
+        let content = "test_content";
+
+        let input = AbortMultipartUploadInput::builder()
+            .bucket(bucket_name.to_string())
+            .key(key_name.to_string())
+            .upload_id(upload_id.to_string())
+            .build()
+            .unwrap();
+
+        let bucket_path = backend.get_bucket_path(bucket_name).unwrap();
+        tokio::fs::create_dir_all(&bucket_path).await.unwrap();
+
+        let object_path = backend.get_object_path(bucket_name, key_name).unwrap();
+        tokio::fs::create_dir_all(object_path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&object_path, content).await.unwrap();
+        let req = build_s3_request(input);
+
+        let result = backend.abort_multipart_upload(req).await;
+        assert!(result.is_err());
     }
 }

@@ -1,3 +1,4 @@
 .env
 target/
 config/local.yaml
+lcov.info

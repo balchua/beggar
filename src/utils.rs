@@ -1,5 +1,10 @@
+use std::path::Path;
+use std::path::PathBuf;
+
 use crate::error::*;
 
+use s3s::dto::Timestamp;
+use s3s::dto::TimestampFormat;
 use s3s::StdError;
 
 use tokio::io::AsyncWrite;
@@ -8,6 +13,7 @@ use tokio::io::AsyncWriteExt;
 use bytes::Bytes;
 use futures::pin_mut;
 use futures::{Stream, StreamExt};
+use path_absolutize::Absolutize;
 use transform_stream::AsyncTryStream;
 
 pub async fn copy_bytes<S, W>(mut stream: S, writer: &mut W) -> Result<u64>
@@ -28,7 +34,10 @@ where
     Ok(nwritten)
 }
 
-pub fn bytes_stream<S, E>(stream: S, content_length: usize) -> impl Stream<Item = Result<Bytes, E>> + Send + 'static
+pub fn bytes_stream<S, E>(
+    stream: S,
+    content_length: usize,
+) -> impl Stream<Item = Result<Bytes, E>> + Send + 'static
 where
     S: Stream<Item = Result<Bytes, E>> + Send + 'static,
     E: Send + 'static,
@@ -50,4 +59,17 @@ where
 
 pub fn hex(input: impl AsRef<[u8]>) -> String {
     hex_simd::encode_to_string(input.as_ref(), hex_simd::AsciiCase::Lower)
+}
+
+pub fn to_timestamp(datetime: &chrono::NaiveDateTime) -> Option<Timestamp> {
+    let date_time_rfc3339 = datetime.and_utc().to_rfc3339();
+
+    match Timestamp::parse(TimestampFormat::DateTime, date_time_rfc3339.as_str()) {
+        Ok(t) => Some(t),
+        Err(_) => None,
+    }
+}
+
+pub fn resolve_abs_path(root_path: &PathBuf, path: impl AsRef<Path>) -> Result<PathBuf> {
+    Ok(path.as_ref().absolutize_virtually(root_path)?.into_owned())
 }

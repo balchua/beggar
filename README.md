@@ -23,6 +23,29 @@ This application features storing the actual data on the local file system or NA
 - No versioning
 - No lifecycle policies
 
+## Development
+
+### Build
+To build for production release use the following
+
+```bash
+cargo build --release
+```
+
+### Test
+
+#### llvm-cov
+
+This project uses the [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) to generate reports.
+
+Install Coverage Gutters VSCode extension to see it in the code.
+
+##### Generate HTML and LCov report
+
+```bash
+cargo llvm-cov --html
+cargo llvm-cov report --lcov --output-path lcov.info
+```
 
 ## Usage
 
