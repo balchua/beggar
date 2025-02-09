@@ -36,14 +36,20 @@ cargo build --release
 
 #### llvm-cov
 
-This project uses the [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) to generate reports.
+This project uses the [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) to generate code coverage reports.
 
-Install Coverage Gutters VSCode extension to see it in the code.
+Install [Coverage Gutters](https://marketplace.visualstudio.com/items?itemName=ryanluker.vscode-coverage-gutters) VSCode extension to see it in the code.
+
+```bash
+code --install-extension ryanluker.vscode-coverage-gutters
+```
 
 ##### Generate HTML and LCov report
 
+We are ignoring the `main.rs` and `error.rs`
+
 ```bash
-cargo llvm-cov --html
+cargo llvm-cov test --html --ignore-filename-regex="(error|main)\.rs"
 cargo llvm-cov report --lcov --output-path lcov.info
 ```
 
