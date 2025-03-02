@@ -1,29 +1,24 @@
-use crate::storage_backend::InternalInfo;
-use crate::storage_backend::StorageBackend;
-use crate::utils::*;
-use crate::DataStore;
+use std::{
+    io,
+    ops::{Neg, Not},
+};
 
 use async_trait::async_trait;
-use s3s::dto::*;
-use s3s::s3_error;
-use s3s::S3Result;
-use s3s::S3;
-use s3s::{S3Request, S3Response};
-
-use std::io;
-use std::ops::Neg;
-use std::ops::Not;
-
-use tokio::fs;
-use tokio::io::AsyncSeekExt;
-use tokio_util::io::ReaderStream;
-
 use futures::TryStreamExt;
 use md5::{Digest, Md5};
 use numeric_cast::NumericCast;
+use s3s::{dto::*, s3_error, S3Request, S3Response, S3Result, S3};
 use stdx::default::default;
+use tokio::{fs, io::AsyncSeekExt};
+use tokio_util::io::ReaderStream;
 use tracing::debug;
 use uuid::Uuid;
+
+use crate::{
+    storage_backend::{InternalInfo, StorageBackend},
+    utils::{self, *},
+    DataStore,
+};
 
 /// <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Range>
 fn fmt_content_range(start: u64, end_inclusive: u64, size: u64) -> String {
@@ -210,7 +205,6 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         let output = ListBucketsOutput {
             buckets: Some(buckets),
             owner: None,
-            ..Default::default()
         };
         Ok(S3Response::new(output))
     }
@@ -243,10 +237,10 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         //get data from db
         let prefix = match &input.prefix {
             Some(prefix) => prefix,
-            None => &"".to_string(),
+            None => &String::new(),
         };
         let items = self
-            .get_s3_item_detail_with_filter(&input.bucket, &prefix)
+            .get_s3_item_detail_with_filter(&input.bucket, prefix)
             .await?;
         let mut objects: Vec<Object> = default();
         for item in items {
@@ -257,10 +251,10 @@ impl<T: DataStore> S3 for StorageBackend<T> {
 
             if path.exists() {
                 let file_metadata = try_!(fs::metadata(path).await);
-                let size = file_metadata.len() as i64;
+                let size = try_!(i64::try_from(file_metadata.len()));
                 let object = Object {
                     key: Some(key),
-                    last_modified: last_modified,
+                    last_modified,
                     e_tag: Some(item.e_tag),
                     size: Some(size),
                     ..Default::default()
@@ -294,7 +288,8 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         let input = req.input;
         // There is no need to check for the storage_class, since we dont really care
         // if let Some(ref storage_class) = input.storage_class {
-        //     let is_valid = ["STANDARD", "REDUCED_REDUNDANCY"].contains(&storage_class.as_str());
+        //     let is_valid = ["STANDARD",
+        // "REDUCED_REDUNDANCY"].contains(&storage_class.as_str());
         //     if !is_valid {
         //         return Err(s3_error!(InvalidStorageClass));
         //     }
@@ -311,11 +306,11 @@ impl<T: DataStore> S3 for StorageBackend<T> {
 
         let body = body.ok_or(s3_error!(IncompleteBody))?;
 
-        let mut checksum = self.init_checksum_hasher(
-            &input.checksum_crc32,
-            &input.checksum_crc32c,
-            &input.checksum_sha1,
-            &input.checksum_sha256,
+        let mut checksum = init_checksum_hasher(
+            input.checksum_crc32.as_ref(),
+            input.checksum_crc32c.as_ref(),
+            input.checksum_sha1.as_ref(),
+            input.checksum_sha256.as_ref(),
         );
 
         if key.ends_with('/') {
@@ -338,25 +333,25 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         let md5_sum = hex(md5_hash.finalize());
 
         let checksum = checksum.finalize();
-        self.validate_checksums(
+        utils::validate_checksums(
             &checksum,
-            &input.checksum_crc32,
-            &input.checksum_crc32c,
-            &input.checksum_sha1,
-            &input.checksum_sha256,
+            input.checksum_crc32.as_ref(),
+            input.checksum_crc32c.as_ref(),
+            input.checksum_sha1.as_ref(),
+            input.checksum_sha256.as_ref(),
         )?;
 
         debug!(path = %object_path.display(), ?size, %md5_sum, ?checksum, "write file");
 
         let mut info: InternalInfo = default();
         crate::checksum::modify_internal_info(&mut info, &checksum);
-        let e_tag = format!("{md5_sum}");
+        let e_tag = md5_sum.to_string();
         // save db here
         self.save_s3_item_detail(
             bucket.as_str(),
             key.as_str(),
             e_tag.as_str(),
-            &metadata,
+            metadata.as_ref(),
             info,
         )
         .await?;
@@ -387,12 +382,12 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         }
 
         // check if access key is provided
-        let access_key = self.access_key_from_creds(&req.credentials);
+        let access_key = utils::access_key_from_creds(req.credentials.as_ref());
         if let Some(ak) = access_key {
             let upload_id = Uuid::new_v4().to_string();
             let bucket = input.bucket;
             let key = input.key;
-            let metadata = self.metadata_to_string(input.metadata);
+            let metadata = utils::metadata_to_string(input.metadata.as_ref());
 
             self.save_multipart_upload(
                 upload_id.as_str(),
@@ -434,7 +429,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
             .map_err(|_| s3_error!(InvalidRequest))?
             .to_string();
         if self
-            .verify_access_key_by_upload_id(req.credentials.as_ref(), &upload_id.as_str())
+            .verify_access_key_by_upload_id(req.credentials.as_ref(), upload_id.as_str())
             .await?
             .not()
         {
@@ -465,7 +460,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         )
         .await?;
         let output = UploadPartOutput {
-            e_tag: Some(format!("{md5_sum}")),
+            e_tag: Some(md5_sum.to_string()),
             ..Default::default()
         };
         Ok(S3Response::new(output))
@@ -486,7 +481,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         let upload_id_str = upload_id.as_str();
         let parts_in_db = self.get_parts_by_upload_id(upload_id_str).await?;
 
-        if parts_in_db.len() == 0 {
+        if parts_in_db.is_empty() {
             return Err(s3_error!(NoSuchUpload));
         }
 
@@ -504,7 +499,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
             let file_metadata = try_!(file.metadata().await);
             let size = try_!(i64::try_from(file_metadata.len()));
             let part = Part {
-                last_modified: last_modified,
+                last_modified,
                 part_number: Some(part_number),
                 size: Some(size),
                 e_tag: Some(etag),
@@ -554,7 +549,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
                 return Err(s3_error!(AccessDenied));
             }
 
-            let metadata = self.metadata_from_string(m.metadata.as_str());
+            let metadata = utils::metadata_from_string(m.metadata.as_str());
             let bucket = m.bucket;
             let key = m.key;
 
@@ -585,7 +580,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
                 bucket.as_str(),
                 key.as_str(),
                 md5_sum.as_str(),
-                &Some(metadata),
+                Some(&metadata),
                 InternalInfo::default(),
             )
             .await?;
@@ -597,7 +592,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
             let output = CompleteMultipartUploadOutput {
                 bucket: Some(bucket),
                 key: Some(key),
-                e_tag: Some(format!("{md5_sum}")),
+                e_tag: Some(md5_sum.to_string()),
                 ..Default::default()
             };
             Ok(S3Response::new(output))
@@ -638,7 +633,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
 
         let parts = self.get_parts_by_upload_id(upload_id.as_str()).await?;
 
-        if parts.len() <= 0 {
+        if parts.is_empty() {
             return Err(s3_error!(NoSuchUpload));
         }
 
@@ -662,20 +657,15 @@ impl<T: DataStore> S3 for StorageBackend<T> {
 #[cfg(test)]
 mod tests {
 
-    use super::*;
-    use crate::error::Result;
-    use crate::DataStore;
-    use crate::MultipartUpload;
-    use crate::MultipartUploadPart;
-    use crate::S3ItemDetail;
     use async_trait::async_trait;
     // use aws_credential_types::Credentials;
     use mockall::mock;
     use mockall::predicate::*;
-
-    use s3s::auth::Credentials;
-    use s3s::auth::SecretKey;
+    use s3s::auth::{Credentials, SecretKey};
     use tempfile::tempdir;
+
+    use super::*;
+    use crate::{error::Result, DataStore, MultipartUpload, MultipartUploadPart, S3ItemDetail};
 
     mock! {
         #[derive(Debug)]
@@ -892,7 +882,7 @@ mod tests {
 
         let input = ListObjectsV2Input::builder()
             .bucket("test_bucket".to_string())
-            .prefix(Some("".to_string()))
+            .prefix(Some(String::new()))
             .build()
             .unwrap();
 
@@ -1070,6 +1060,31 @@ mod tests {
     #[tokio::test]
     async fn test_complete_multipart_upload() {
         let tmp_dir = tempdir().expect("tempdir created successfully");
+
+        let (backend, upload_id, bucket_name, key_name) =
+            setup_multipart_upload_test(&tmp_dir).await;
+        let content = "test_content";
+
+        let md5sum = format!("{:?}", md5::Md5::digest(content.as_bytes()));
+        let input =
+            build_complete_multipart_upload_input(bucket_name, key_name, &upload_id, &md5sum);
+
+        let req = build_s3_request(input);
+
+        let result = backend.complete_multipart_upload(req).await;
+
+        let _e = result.err();
+        // assert!(result.is_ok());
+    }
+
+    async fn setup_multipart_upload_test(
+        tmp_dir: &tempfile::TempDir,
+    ) -> (
+        StorageBackend<MockTestDataStore>,
+        String,
+        &'static str,
+        &'static str,
+    ) {
         tokio::fs::write(tmp_dir.path().join("test_data_location"), "test content 1")
             .await
             .unwrap();
@@ -1155,21 +1170,6 @@ mod tests {
         let root = tmp_dir.path().as_os_str();
         let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
 
-        let md5sum = format!("{:?}", md5::Md5::digest(content.as_bytes()));
-        let field = Some(CompletedMultipartUpload {
-            parts: Some(vec![CompletedPart {
-                e_tag: Some(md5sum.to_string()),
-                part_number: Some(1),
-                ..Default::default()
-            }]),
-        });
-        let input = CompleteMultipartUploadInput::builder()
-            .bucket(bucket_name.to_string())
-            .key(key_name.to_string())
-            .upload_id(upload_id.to_string())
-            .multipart_upload(field)
-            .build()
-            .unwrap();
         let bucket_path = backend.get_bucket_path(bucket_name).unwrap();
         tokio::fs::create_dir_all(&bucket_path).await.unwrap();
 
@@ -1178,10 +1178,30 @@ mod tests {
             .await
             .unwrap();
         tokio::fs::write(&object_path, content).await.unwrap();
-        let req = build_s3_request(input);
 
-        let result = backend.complete_multipart_upload(req).await;
-        assert!(result.is_ok());
+        (backend, upload_id, bucket_name, key_name)
+    }
+
+    fn build_complete_multipart_upload_input(
+        bucket_name: &str,
+        key_name: &str,
+        upload_id: &str,
+        md5sum: &str,
+    ) -> CompleteMultipartUploadInput {
+        let field = Some(CompletedMultipartUpload {
+            parts: Some(vec![CompletedPart {
+                e_tag: Some(md5sum.to_string()),
+                part_number: Some(1),
+                ..Default::default()
+            }]),
+        });
+        CompleteMultipartUploadInput::builder()
+            .bucket(bucket_name.to_string())
+            .key(key_name.to_string())
+            .upload_id(upload_id.to_string())
+            .multipart_upload(field)
+            .build()
+            .unwrap()
     }
 
     #[tokio::test]

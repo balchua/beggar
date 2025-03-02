@@ -1,5 +1,8 @@
 # Beggar
 
+![Rust CI](https://github.com/your-username/beggar/workflows/Rust%20CI/badge.svg)
+[![codecov](https://codecov.io/gh/your-username/beggar/branch/main/graph/badge.svg)](https://codecov.io/gh/your-username/beggar)
+
 Beggar is a simple S3 interface emulating the S3 API.  It is designed to be used in an environment where a real S3 implementation is not available.  It is not intended to be a full implementation of the S3 API, but rather a subset of the API that is useful for majority of use cases.
 
 This application features storing the actual data on the local file system or NAS.  While the item metadata is stored in Postgres Database.
@@ -25,6 +28,23 @@ This application features storing the actual data on the local file system or NA
 
 ## Development
 
+### Prerequisites
+- Rust stable
+- PostgreSQL
+
+### Setup
+```bash
+# Clone the repository
+git clone https://github.com/your-username/beggar.git
+cd beggar
+
+# Build the project
+cargo build
+
+# Run tests
+cargo test
+```
+
 ### Build
 To build for production release use the following
 
@@ -34,23 +54,33 @@ cargo build --release
 
 ### Test
 
-#### llvm-cov
+#### Code Coverage
 
-This project uses the [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) to generate code coverage reports.
+This project uses [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) to generate code coverage reports. Code coverage reports are automatically generated during CI runs and uploaded to [Codecov](https://codecov.io/gh/your-username/beggar).
 
-Install [Coverage Gutters](https://marketplace.visualstudio.com/items?itemName=ryanluker.vscode-coverage-gutters) VSCode extension to see it in the code.
+To generate coverage reports locally:
+
+```bash
+# Install cargo-llvm-cov if you don't have it
+cargo install cargo-llvm-cov
+
+# Generate HTML and LCov report
+cargo llvm-cov test --html --ignore-filename-regex="(error|main)\.rs"
+cargo llvm-cov report --lcov --output-path lcov.info
+```
+
+#### VSCode Integration
+
+Install [Coverage Gutters](https://marketplace.visualstudio.com/items?itemName=ryanluker.vscode-coverage-gutters) VSCode extension to see code coverage in the editor.
 
 ```bash
 code --install-extension ryanluker.vscode-coverage-gutters
 ```
 
-##### Generate HTML and LCov report
-
-We are ignoring the `main.rs` and `error.rs`
-
+### Database Setup
 ```bash
-cargo llvm-cov test --html --ignore-filename-regex="(error|main)\.rs"
-cargo llvm-cov report --lcov --output-path lcov.info
+# Set up the database
+export DATABASE_URL=postgres://username:password@localhost:5432/beggar_db
 ```
 
 ## Usage
@@ -89,6 +119,37 @@ During **development** is is best to run the migration manually using the follow
 ```bash
 sqlx migrate run --source ./migrations
 ```
+
+### SQLx Offline Mode
+
+This project uses SQLx offline mode for CI, which allows building and verifying SQL queries without requiring a live database connection. This is helpful for CI environments and for development when you don't have access to the database.
+
+To update the SQLx offline data:
+
+```bash
+# Make sure you have a database connection available
+export DATABASE_URL=postgres://username:password@localhost:5432/beggar_db
+
+# Run migrations to ensure the schema is up to date
+sqlx migrate run
+
+# Generate offline data
+cargo sqlx prepare --merged
+```
+
+The generated `.sqlx` directory contains the prepared SQL queries, which should be committed to the repository.
+
+To build using offline mode:
+
+```bash
+# Set SQLX_OFFLINE environment variable
+export SQLX_OFFLINE=true
+
+# Now you can build without a database connection
+cargo build
+```
+
+In CI, the `SQLX_OFFLINE` environment variable is set to `true` by default to use the prepared queries.
 
 ### Accessing using the aws cli
 
@@ -171,7 +232,7 @@ Sample output:
 
 #### List buckets
 
-```bash 
+```bash
 aws s3api list-buckets --profile dev --prefix test-buckets  --no-cli-pager
 
 Sample output:
@@ -326,3 +387,7 @@ Sample Output:
  ```bash
  aws s3api abort-multipart-upload --profile dev --bucket test-buckets --key crictl --upload-id 624be2ac-073a-452d-95d9-60c838877232 --no-cli-pager
  ```
+
+## License
+
+<!-- Add your license information here -->

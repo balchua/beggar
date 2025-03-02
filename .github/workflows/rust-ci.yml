@@ -8,12 +8,13 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  SQLX_OFFLINE: true
 
 jobs:
   build:
     name: Build and Test
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: postgres:14
@@ -31,7 +32,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -41,28 +42,58 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         components: clippy, rustfmt
-    
+
     - name: Rust Cache
       uses: Swatinem/rust-cache@v2
-    
+
     - name: Check format
-      run: cargo fmt --all -- --check
-      
+      run: cargo fmt --all -- --check --config-path=rustfmt.toml
+
     - name: Clippy
       run: cargo clippy -- -D warnings
-    
+
     - name: Build
       run: cargo build --verbose
-    
+
+    - name: Run migrations and create SQLx offline data
+      run: |
+        cargo install sqlx-cli --no-default-features --features native-tls,postgres
+        sqlx migrate run
+        cargo sqlx prepare --check -- --lib
+      env:
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/beggar_test
+
     - name: Run tests
       run: cargo test --verbose
       env:
         DATABASE_URL: postgres://postgres:postgres@localhost:5432/beggar_test
 
+  check-sqlx:
+    name: Check SQLx Queries (Offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check SQLx queries (offline mode)
+        run: cargo sqlx prepare --check
+        env:
+          SQLX_OFFLINE: true
+
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: postgres:14
@@ -80,29 +111,29 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config
-      
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
-      
+
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
-      
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      
+
       - name: Generate code coverage
         run: |
           cargo llvm-cov test --ignore-filename-regex="(error|main)\.rs" --lcov --output-path lcov.info
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/beggar_test
-      
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:

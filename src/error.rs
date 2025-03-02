@@ -29,6 +29,7 @@ impl Error {
     }
 
     /// Access the inner error source
+    #[must_use]
     pub fn source(&self) -> &StdError {
         &self.source
     }

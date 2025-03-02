@@ -2,24 +2,18 @@
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(clippy::needless_return)]
 
-use beggar::PostgresDatastore;
-use beggar::Result;
-use beggar::StorageBackend;
+use std::{io::IsTerminal, path::PathBuf};
 
-use s3s::auth::SimpleAuth;
-use s3s::service::S3ServiceBuilder;
-
-use std::io::IsTerminal;
-use std::path::PathBuf;
-
-use tokio::net::TcpListener;
-
+use beggar::{PostgresDatastore, Result, StorageBackend};
 use clap::{CommandFactory, Parser};
+use hyper_util::{
+    rt::{TokioExecutor, TokioIo},
+    server::conn::auto::Builder as ConnBuilder,
+    service::TowerToHyperService,
+};
+use s3s::{auth::SimpleAuth, service::S3ServiceBuilder};
+use tokio::net::TcpListener;
 use tracing::{error, info};
-
-use hyper_util::rt::{TokioExecutor, TokioIo};
-use hyper_util::server::conn::auto::Builder as ConnBuilder;
-use hyper_util::service::TowerToHyperService;
 
 #[derive(Debug, Parser)]
 #[command(version)]
@@ -106,8 +100,7 @@ async fn run(opt: Opt) -> Result {
         Err(e) => {
             error!("Failed to load settings: {}", e);
             return Err(beggar::Error::from_string(format!(
-                "Failed to load settings: {}",
-                e
+                "Failed to load settings: {e}"
             )));
         }
     };
@@ -180,7 +173,8 @@ async fn run(opt: Opt) -> Result {
 
         let io = TokioIo::new(stream);
 
-        // let svc = ServiceBuilder::new().layer_fn(Logger::new).service(hyper_service.clone());
+        // let svc = ServiceBuilder::new().layer_fn(Logger::new).service(hyper_service.
+        // clone());
 
         let conn = http_server.serve_connection(
             io,

@@ -10,6 +10,7 @@
     clippy::let_underscore_untyped,
     clippy::module_name_repetitions,
     clippy::multiple_crate_versions, // TODO: check later
+    clippy::cargo_common_metadata,
 )]
 
 #[macro_use]

@@ -10,7 +10,7 @@ use crate::error::Result;
 use crate::{MultipartUpload, MultipartUploadPart, S3ItemDetail, Settings};
 
 // Constants for security and performance
-const MAX_QUERY_SIZE: usize = 1000; // Limit query results
+const MAX_QUERY_SIZE: i32 = 1000; // Limit query results
 const CONNECTION_TIMEOUT: u64 = 30; // Connection timeout in seconds
 const STATEMENT_TIMEOUT: &str = "30000"; // SQL statement timeout in milliseconds
 
@@ -57,11 +57,10 @@ impl PostgresDatastore {
         let test_before_acquire = settings.datasource.test_before_acquire;
         let acquire_slow_threshold =
             Duration::from_millis(settings.datasource.acquire_slow_threshold);
-        
+
         // Log sanitized connection info (no password)
         let sanitized_connection = format!(
-            "postgres://{}:*****@{}:{}/{}?options=-csearch_path={}",
-            user, host, port, db, schema
+            "postgres://{user}:*****@{host}:{port}/{db}?options=-csearch_path={schema}"
         );
         info!(target: "database", connection = %sanitized_connection, "Initializing database connection");
 
@@ -79,17 +78,17 @@ impl PostgresDatastore {
                 ("log_statement", "none"),                // Don't log statements with credentials
                 ("tcp_keepalives_idle", "60"),            // Keep connections alive
             ]);
-        
+
         let pool_options = PgPoolOptions::new()
             .max_connections(max_connections)
             .min_connections(min_connections)
             .acquire_timeout(Duration::from_secs(CONNECTION_TIMEOUT))
             .acquire_slow_threshold(acquire_slow_threshold)
             .test_before_acquire(test_before_acquire);
-        
+
         // Establish connection with immediate validation
         debug!(target: "database", "Creating connection pool");
-        
+
         let pool = match pool_options.connect_with(connect_options).await {
             Ok(pool) => {
                 // Verify we can actually execute a query
@@ -101,7 +100,7 @@ impl PostgresDatastore {
                     },
                     Err(e) => {
                         error!(
-                            target: "database", 
+                            target: "database",
                             error = %e,
                             "Database connection validation failed"
                         );
@@ -112,7 +111,7 @@ impl PostgresDatastore {
             Err(e) => {
                 error!(
                     target: "database",
-                    error = %e, 
+                    error = %e,
                     host = %host,
                     port = %port,
                     db = %db,
@@ -127,6 +126,7 @@ impl PostgresDatastore {
 
     /// Only for tests - creates a datastore with an existing pool
     #[cfg(test)]
+    #[must_use]
     pub fn with_pool(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
@@ -135,7 +135,7 @@ impl PostgresDatastore {
     pub async fn migrate(&self) -> Result<()> {
         info!(target: "database", "Running database migrations");
         match sqlx::migrate!("./migrations").run(&self.pool).await {
-            Ok(_) => {
+            Ok(()) => {
                 info!(target: "database", "Database migrations completed successfully");
                 Ok(())
             },
@@ -145,7 +145,7 @@ impl PostgresDatastore {
             }
         }
     }
-    
+
     // New method to sanitize database inputs for logging
     fn sanitize_for_logging(input: &str) -> String {
         // Simple sanitization for logging purposes
@@ -154,14 +154,14 @@ impl PostgresDatastore {
         } else {
             input.to_string()
         };
-        
+
         // Remove potentially dangerous characters for logging
         shortened
             .chars()
             .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '_' || *c == '-' || *c == '/')
             .collect()
     }
-    
+
     // New health check method
     #[instrument(level = "info", name = "db_health_check", skip(self))]
     pub async fn check_connection_health(&self) -> Result<()> {
@@ -191,7 +191,7 @@ impl DataStore for PostgresDatastore {
             target: "storage",
             "Saving S3 item detail"
         );
-        
+
         match sqlx::query!(
             r#"
             INSERT INTO s3_item_detail (bucket, key, metadata, internal_info, last_modified, md5, data_location)
@@ -202,7 +202,7 @@ impl DataStore for PostgresDatastore {
             md5 = $5,
             data_location = $6
             "#,
-            item.bucket, 
+            item.bucket,
             item.key,
             item.metadata,
             item.internal_info,
@@ -240,13 +240,13 @@ impl DataStore for PostgresDatastore {
             key = %Self::sanitize_for_logging(key),
             "Retrieving S3 item detail"
         );
-        
+
         match sqlx::query_as!(
             S3ItemDetail,
             r#"
             SELECT bucket, key, metadata, internal_info, last_modified, md5 as e_tag, data_location
             FROM s3_item_detail
-            WHERE bucket = $1 AND key = $2 
+            WHERE bucket = $1 AND key = $2
             "#,
             bucket,
             key
@@ -295,9 +295,9 @@ impl DataStore for PostgresDatastore {
             filter = %Self::sanitize_for_logging(filter),
             "Retrieving S3 items with filter"
         );
-        
+
         // Add LIMIT to prevent too many results (DoS protection)
-        let filter_with_wildcard = format!("{}%", filter);
+        let filter_with_wildcard = format!("{filter}%");
         match sqlx::query_as!(
             S3ItemDetail,
             r#"
@@ -337,7 +337,7 @@ impl DataStore for PostgresDatastore {
     #[instrument(level = "debug", name = "get_all_buckets", skip(self))]
     async fn get_all_buckets(&self) -> Result<Vec<String>> {
         debug!("Retrieving all buckets");
-        
+
         // Add LIMIT to prevent potential DoS with too many buckets
         match sqlx::query!(
             r#"
@@ -368,7 +368,7 @@ impl DataStore for PostgresDatastore {
             upload_id = %upload.upload_id,
             "Saving multipart upload"
         );
-        
+
         match sqlx::query!(
             r#"
             INSERT INTO multipart_upload (upload_id, bucket, key, last_modified, metadata, access_key)
@@ -413,7 +413,7 @@ impl DataStore for PostgresDatastore {
             part_number = part.part_number,
             "Saving multipart upload part"
         );
-        
+
         match sqlx::query!(
             r#"
             INSERT INTO multipart_upload_part (upload_id, part_number, last_modified, md5, data_location)
@@ -451,7 +451,7 @@ impl DataStore for PostgresDatastore {
 
     async fn get_access_key_by_upload_id(&self, upload_id: &str) -> Result<Option<String>> {
         debug!(upload_id = %upload_id, "Retrieving access key by upload ID");
-        
+
         match sqlx::query!(
             r#"
             SELECT access_key
@@ -483,7 +483,7 @@ impl DataStore for PostgresDatastore {
 
     async fn get_parts_by_upload_id(&self, upload_id: &str) -> Result<Vec<MultipartUploadPart>> {
         debug!(upload_id = %upload_id, "Retrieving parts by upload ID");
-        
+
         // Add LIMIT to prevent too many results (DoS protection)
         match sqlx::query_as!(
             MultipartUploadPart,
@@ -523,7 +523,7 @@ impl DataStore for PostgresDatastore {
         upload_id: &str,
     ) -> Result<Option<MultipartUpload>> {
         debug!(upload_id = %upload_id, "Retrieving multipart upload by ID");
-        
+
         match sqlx::query_as!(
             MultipartUpload,
             r#"
@@ -557,7 +557,7 @@ impl DataStore for PostgresDatastore {
     #[instrument(level = "info", name = "delete_multipart_upload", skip(self), fields(upload_id = %upload_id))]
     async fn delete_multipart_upload_by_upload_id(&self, upload_id: &str) -> Result<()> {
         debug!(target: "storage", "Deleting multipart upload by ID");
-        
+
         match sqlx::query!(
             r#"
             DELETE FROM multipart_upload

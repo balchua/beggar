@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn test_from_internal_info_missing_fields() {
-        let info: InternalInfo = serde_json::from_str(r#"{}"#).unwrap();
+        let info: InternalInfo = serde_json::from_str(r"{}").unwrap();
         let checksum = from_internal_info(&info);
 
         assert_eq!(checksum.checksum_crc32, None);

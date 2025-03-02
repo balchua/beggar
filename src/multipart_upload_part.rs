@@ -10,6 +10,7 @@ pub struct MultipartUploadPart {
 }
 
 impl MultipartUploadPart {
+    #[must_use]
     pub fn builder() -> MultipartUploadPartBuilder {
         MultipartUploadPartBuilder::default()
     }
@@ -24,26 +25,40 @@ pub struct MultipartUploadPartBuilder {
 }
 
 impl MultipartUploadPartBuilder {
+    #[must_use]
     pub fn upload_id(mut self, upload_id: String) -> Self {
         self.upload_id = Some(upload_id);
         self
     }
 
+    #[must_use]
     pub fn part_number(mut self, part_number: i32) -> Self {
         self.part_number = Some(part_number);
         self
     }
 
+    #[must_use]
     pub fn md5(mut self, md5: String) -> Self {
         self.md5 = Some(md5);
         self
     }
 
+    #[must_use]
     pub fn data_location(mut self, data_location: String) -> Self {
         self.data_location = Some(data_location);
         self
     }
 
+    /// Creates a `MultipartUploadPart` from the builder.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of the required fields have not been set:
+    /// - `upload_id`
+    /// - `part_number`
+    /// - `md5`
+    /// - `data_location`
+    #[must_use]
     pub fn build(self) -> MultipartUploadPart {
         MultipartUploadPart {
             upload_id: self.upload_id.expect("upload_id must be set"),

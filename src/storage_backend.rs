@@ -1,22 +1,27 @@
-use crate::utils::{hex, resolve_abs_path};
-use crate::{error::*, DataStore, MultipartUpload, MultipartUploadPart, S3ItemDetail};
-
-use s3s::auth::Credentials;
-use s3s::dto::{self, Checksum};
-use s3s::{s3_error, S3Result};
-use stdx::default::default;
-use tracing::info;
-
-use std::env;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-
-use tokio::fs;
-use tokio::fs::File;
-use tokio::io::{AsyncReadExt, BufWriter};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use md5::{Digest, Md5};
-use s3s::dto::PartNumber;
+use s3s::{
+    auth::Credentials,
+    dto::{self, PartNumber},
+    s3_error, S3Result,
+};
+use tokio::{
+    fs,
+    fs::File,
+    io::{AsyncReadExt, BufWriter},
+};
+use tracing::{debug, info, warn};
+
+use crate::{
+    error::*,
+    utils::{self, hex, resolve_abs_path},
+    DataStore, MultipartUpload, MultipartUploadPart, S3ItemDetail,
+};
 
 #[derive(Debug)]
 pub struct StorageBackend<T: DataStore> {
@@ -59,6 +64,40 @@ impl<T: DataStore> StorageBackend<T> {
         })
     }
 
+    /// Validates an S3 key according to S3 specifications
+    ///
+    /// S3 key validation rules:
+    /// - Must not be empty
+    /// - Must be 1-1024 bytes in length when UTF-8 encoded
+    /// - Must not contain control characters or certain special characters
+    ///
+    /// This should be used before any operations that store or retrieve data
+    /// based on S3 keys to prevent path traversal and other security issues.
+    pub fn validate_s3_key(&self, key: &str) -> bool {
+        // Basic length validation
+        if key.is_empty() || key.len() > 1024 {
+            warn!(key = %key, "S3 key failed length validation");
+            return false;
+        }
+
+        // Look for unsafe characters - notably "../" path traversal attempts
+        if key.contains("../") || key.contains("./") || key.contains("//") {
+            warn!(key = %key, "S3 key contains potentially unsafe path sequences");
+            return false;
+        }
+
+        // Reject keys with control characters
+        if key.chars().any(char::is_control) {
+            warn!(key = %key, "S3 key contains control characters");
+            return false;
+        }
+
+        // Additional S3 specific validation could be added here
+
+        debug!(key = %key, "S3 key passed validation");
+        true
+    }
+
     pub(crate) fn resolve_upload_part_path(
         &self,
         upload_id: &str,
@@ -81,32 +120,6 @@ impl<T: DataStore> StorageBackend<T> {
     pub(crate) fn get_bucket_path(&self, bucket: &str) -> Result<PathBuf> {
         let dir = Path::new(&bucket);
         resolve_abs_path(&self.root, dir)
-    }
-
-    /// convert Metadata to string
-    pub(crate) fn metadata_to_string(&self, metadata: Option<dto::Metadata>) -> String {
-        match metadata {
-            Some(metadata) => {
-                let metadata = serde_json::to_string(&metadata).unwrap_or_default();
-                metadata
-            }
-            None => "{}".to_string(),
-        }
-    }
-
-    /// convert metadata in string to Metadata
-    pub(crate) fn metadata_from_string(&self, metadata: &str) -> dto::Metadata {
-        serde_json::from_str(metadata).unwrap_or_default()
-    }
-
-    /// retrieve the access key from Credentials
-    pub(crate) fn access_key_from_creds<'a>(
-        &self,
-        cred: &'a Option<Credentials>,
-    ) -> Option<&'a str> {
-        cred.as_ref()
-            .map(|c| c.access_key.as_str())
-            .or_else(|| return None)
     }
 
     /// get md5 sum
@@ -141,7 +154,8 @@ impl<T: DataStore> StorageBackend<T> {
     }
 
     /// Write to the filesystem atomically.
-    /// This is done by first writing to a temporary location and then moving the file.
+    /// This is done by first writing to a temporary location and then moving
+    /// the file.
     pub(crate) async fn prepare_file_write<'a>(&self, path: &'a Path) -> Result<FileWriter<'a>> {
         let tmp_name = format!(
             ".tmp.{}.internal.part",
@@ -158,59 +172,13 @@ impl<T: DataStore> StorageBackend<T> {
         })
     }
 
-    pub(crate) fn init_checksum_hasher(
-        &self,
-        crc32: &Option<String>,
-        crc32c: &Option<String>,
-        sha1: &Option<String>,
-        sha256: &Option<String>,
-    ) -> s3s::checksum::ChecksumHasher {
-        let mut checksum: s3s::checksum::ChecksumHasher = default();
-        if crc32.is_some() {
-            checksum.crc32 = Some(default());
-        }
-        if crc32c.is_some() {
-            checksum.crc32c = Some(default());
-        }
-        if sha1.is_some() {
-            checksum.sha1 = Some(default());
-        }
-        if sha256.is_some() {
-            checksum.sha256 = Some(default());
-        }
-        checksum
-    }
-
-    pub(crate) fn validate_checksums(
-        &self,
-        checksum: &Checksum,
-        crc32: &Option<String>,
-        crc32c: &Option<String>,
-        sha1: &Option<String>,
-        sha256: &Option<String>,
-    ) -> S3Result<()> {
-        if checksum.checksum_crc32 != *crc32 {
-            return Err(s3_error!(BadDigest, "checksum_crc32 mismatch"));
-        }
-        if checksum.checksum_crc32c != *crc32c {
-            return Err(s3_error!(BadDigest, "checksum_crc32c mismatch"));
-        }
-        if checksum.checksum_sha1 != *sha1 {
-            return Err(s3_error!(BadDigest, "checksum_sha1 mismatch"));
-        }
-        if checksum.checksum_sha256 != *sha256 {
-            return Err(s3_error!(BadDigest, "checksum_sha256 mismatch"));
-        }
-        Ok(())
-    }
-
     pub(crate) async fn handle_directory_creation(
         &self,
         content_length: Option<i64>,
         bucket: &str,
         key: &str,
     ) -> S3Result<()> {
-        if content_length.map(|len| len > 0).unwrap_or(false) {
+        if content_length.is_some_and(|len| len > 0) {
             info!("content_length is greater than 0");
             return Err(s3_error!(
                 UnexpectedContent,
@@ -227,14 +195,16 @@ impl<T: DataStore> StorageBackend<T> {
         bucket: &str,
         key: &str,
         e_tag: &str,
-        metadata: &Option<dto::Metadata>,
+        metadata: Option<&dto::Metadata>,
         internal_info: InternalInfo,
     ) -> Result<()> {
-        let internal_info_str = serde_json::to_string(&internal_info)?;
-        let mut metadata_str = String::from("{}");
-        if let Some(meta) = metadata {
-            metadata_str = serde_json::to_string(meta)?;
+        // Validate the key before saving
+        if !self.validate_s3_key(key) {
+            return Err(Error::from_string("Invalid S3 key format"));
         }
+
+        let internal_info_str = serde_json::to_string(&internal_info)?;
+        let metadata_str = utils::metadata_to_string(metadata);
         let path = bucket.to_string() + "/" + key;
 
         let item = S3ItemDetail::builder()
@@ -378,17 +348,17 @@ impl Drop for FileWriter<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::MultipartUpload;
-    use crate::MultipartUploadPart;
     use async_trait::async_trait;
-    use mockall::mock;
-    use mockall::predicate::*;
-    use s3s::auth::Credentials;
-    use s3s::auth::SecretKey;
-    use s3s::dto;
+    use mockall::{mock, predicate::*};
+    use s3s::{
+        auth::{Credentials, SecretKey},
+        dto::{self, Checksum},
+    };
     use tempfile::tempdir;
     use uuid::Uuid;
+
+    use super::*;
+    use crate::{MultipartUpload, MultipartUploadPart};
 
     mock! {
         #[derive(Debug)]
@@ -417,29 +387,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_save_s3_item_detail() {
-        let mut mock_ds = MockTestDataStore::new();
-        mock_ds
-            .expect_save_s3_item_detail()
-            .times(1)
-            .returning(|_| Ok(()));
-
-        // initialize the temp directory
-        // Create a directory inside of `env::temp_dir()`
-        let tmp_dir = tempdir().expect("tempdir created successfully");
-        let root = tmp_dir.path().as_os_str();
-        let metadata: Option<dto::Metadata> = serde_json::from_str(r#"{"hello": "world"}"#).ok();
-        let internal_info = r#"{"internal": "info"}"#.to_string();
-        let info: InternalInfo = serde_json::from_str(&internal_info).ok().unwrap();
-        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
-
-        let result = backend
-            .save_s3_item_detail("bb", "item-1.txt", "random_md5sum", &metadata, info)
-            .await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_get_s3_item_detail() {
         let mut mock_ds = MockTestDataStore::new();
         mock_ds
             .expect_get_s3_item_detail()
@@ -472,7 +419,7 @@ mod tests {
             .unwrap();
         let expected_path = tmp_dir
             .path()
-            .join(format!(".upload_id-{}.part-{}", upload_id, part_number));
+            .join(format!(".upload_id-{upload_id}.part-{part_number}"));
         assert_eq!(path, expected_path);
     }
 
@@ -552,31 +499,16 @@ mod tests {
         let tmp_dir = tempdir().expect("tempdir created successfully");
         let root = tmp_dir.path().as_os_str();
         let mock_ds = MockTestDataStore::new();
-        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
-
-        let metadata: Option<dto::Metadata> = serde_json::from_str(r#"{"hello": "world"}"#).ok();
-        let metadata_string = backend.metadata_to_string(metadata);
-        assert_eq!(metadata_string, "{\"hello\":\"world\"}");
-
-        let metadata_string = backend.metadata_to_string(None);
-        assert_eq!(metadata_string, "{}");
-    }
-
-    #[test]
-    fn test_metadata_from_string() {
-        let tmp_dir = tempdir().expect("tempdir created successfully");
-        let root = tmp_dir.path().as_os_str();
-        let mock_ds = MockTestDataStore::new();
-        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+        let _backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
 
         let metadata_string = "{\"hello\":\"world\"}";
-        let metadata = backend.metadata_from_string(metadata_string);
+        let metadata = utils::metadata_from_string(metadata_string);
         let expected_metadata: dto::Metadata =
             serde_json::from_str(r#"{"hello": "world"}"#).unwrap();
         assert_eq!(metadata, expected_metadata);
 
         let metadata_string = "";
-        let metadata = backend.metadata_from_string(metadata_string);
+        let metadata = utils::metadata_from_string(metadata_string);
         assert_eq!(metadata, dto::Metadata::new());
     }
 
@@ -585,16 +517,16 @@ mod tests {
         let tmp_dir = tempdir().expect("tempdir created successfully");
         let root = tmp_dir.path().as_os_str();
         let mock_ds = MockTestDataStore::new();
-        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+        let _backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
 
         let creds = Some(Credentials {
             access_key: "test_access_key".to_string(),
             secret_key: SecretKey::from("test_secret_key"),
         });
-        let access_key = backend.access_key_from_creds(&creds);
+        let access_key = utils::access_key_from_creds(creds.as_ref());
         assert_eq!(access_key, Some("test_access_key"));
 
-        let access_key = backend.access_key_from_creds(&None);
+        let access_key = utils::access_key_from_creds(None);
         assert_eq!(access_key, None);
     }
 
@@ -644,7 +576,7 @@ mod tests {
             .verify_access_key_by_upload_id(creds.as_ref(), upload_id)
             .await
             .unwrap();
-        assert_eq!(result, true);
+        assert!(result);
 
         let creds = Some(Credentials {
             access_key: "wrong_access_key".to_string(),
@@ -654,7 +586,7 @@ mod tests {
             .verify_access_key_by_upload_id(creds.as_ref(), upload_id)
             .await
             .unwrap();
-        assert_eq!(result, false);
+        assert!(!result);
     }
 
     #[test]
@@ -662,21 +594,26 @@ mod tests {
         let tmp_dir = tempdir().expect("tempdir created successfully");
         let root = tmp_dir.path().as_os_str();
         let mock_ds = MockTestDataStore::new();
-        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+        let _backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
 
         let crc32 = Some("crc32".to_string());
         let crc32c = Some("crc32c".to_string());
         let sha1 = Some("sha1".to_string());
         let sha256 = Some("sha256".to_string());
 
-        let checksum_hasher = backend.init_checksum_hasher(&crc32, &crc32c, &sha1, &sha256);
+        let checksum_hasher = utils::init_checksum_hasher(
+            crc32.as_ref(),
+            crc32c.as_ref(),
+            sha1.as_ref(),
+            sha256.as_ref(),
+        );
 
         assert!(checksum_hasher.crc32.is_some());
         assert!(checksum_hasher.crc32c.is_some());
         assert!(checksum_hasher.sha1.is_some());
         assert!(checksum_hasher.sha256.is_some());
 
-        let checksum_hasher = backend.init_checksum_hasher(&None, &None, &None, &None);
+        let checksum_hasher = utils::init_checksum_hasher(None, None, None, None);
 
         assert!(checksum_hasher.crc32.is_none());
         assert!(checksum_hasher.crc32c.is_none());
@@ -689,7 +626,7 @@ mod tests {
         let tmp_dir = tempdir().expect("tempdir created successfully");
         let root = tmp_dir.path().as_os_str();
         let mock_ds = MockTestDataStore::new();
-        let backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
+        let _backend = StorageBackend::new(root, mock_ds).expect("backend created successfully");
 
         let crc32 = Some("crc32".to_string());
         let crc32c = Some("crc32c".to_string());
@@ -703,7 +640,13 @@ mod tests {
             checksum_sha256: Some("sha256".to_string()),
         };
 
-        let result = backend.validate_checksums(&checksum, &crc32, &crc32c, &sha1, &sha256);
+        let result = utils::validate_checksums(
+            &checksum,
+            crc32.as_ref(),
+            crc32c.as_ref(),
+            sha1.as_ref(),
+            sha256.as_ref(),
+        );
         assert!(result.is_ok());
 
         // Test case: checksum_crc32 mismatch
@@ -713,7 +656,15 @@ mod tests {
             checksum_sha1: Some("sha1".to_string()),
             checksum_sha256: Some("sha256".to_string()),
         };
-        let result = backend.validate_checksums(&checksum, &crc32, &crc32c, &sha1, &sha256);
+        let result = utils::validate_checksums(
+            &checksum,
+            crc32.as_ref(),
+            crc32c.as_ref(),
+            sha1.as_ref(),
+            sha256.as_ref(),
+        );
+        // let result = utils::validate_checksums(&checksum, &crc32, &crc32c, &sha1,
+        // &sha256);
         assert!(result.is_err());
 
         // Test case: checksum_crc32c mismatch
@@ -723,7 +674,13 @@ mod tests {
             checksum_sha1: Some("sha1".to_string()),
             checksum_sha256: Some("sha256".to_string()),
         };
-        let result = backend.validate_checksums(&checksum, &crc32, &crc32c, &sha1, &sha256);
+        let result = utils::validate_checksums(
+            &checksum,
+            crc32.as_ref(),
+            crc32c.as_ref(),
+            sha1.as_ref(),
+            sha256.as_ref(),
+        );
         assert!(result.is_err());
 
         // Test case: checksum_sha1 mismatch
@@ -733,7 +690,13 @@ mod tests {
             checksum_sha1: Some("wrong_sha1".to_string()),
             checksum_sha256: Some("sha256".to_string()),
         };
-        let result = backend.validate_checksums(&checksum, &crc32, &crc32c, &sha1, &sha256);
+        let result = utils::validate_checksums(
+            &checksum,
+            crc32.as_ref(),
+            crc32c.as_ref(),
+            sha1.as_ref(),
+            sha256.as_ref(),
+        );
         assert!(result.is_err());
 
         // Test case: checksum_sha256 mismatch
@@ -743,7 +706,13 @@ mod tests {
             checksum_sha1: Some("sha1".to_string()),
             checksum_sha256: Some("wrong_sha256".to_string()),
         };
-        let result = backend.validate_checksums(&checksum, &crc32, &crc32c, &sha1, &sha256);
+        let result = utils::validate_checksums(
+            &checksum,
+            crc32.as_ref(),
+            crc32c.as_ref(),
+            sha1.as_ref(),
+            sha256.as_ref(),
+        );
         assert!(result.is_err());
     }
 

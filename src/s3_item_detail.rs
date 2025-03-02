@@ -24,47 +24,66 @@ pub struct S3ItemDetailBuilder {
 }
 
 impl S3ItemDetail {
+    #[must_use]
     pub fn builder() -> S3ItemDetailBuilder {
         S3ItemDetailBuilder::default()
     }
 }
 
 impl S3ItemDetailBuilder {
+
+    #[must_use]
     pub fn bucket(mut self, bucket: String) -> Self {
         self.bucket = Some(bucket);
         self
     }
 
+
+    #[must_use]
     pub fn key(mut self, key: String) -> Self {
         self.key = Some(key);
         self
     }
 
+    #[must_use]
     pub fn e_tag(mut self, e_tag: String) -> Self {
         self.e_tag = Some(e_tag);
         self
     }
 
+
+    #[must_use]
     pub fn last_modified(mut self, last_modified: NaiveDateTime) -> Self {
         self.last_modified = Some(last_modified);
         self
     }
 
+    #[must_use]
     pub fn data_location(mut self, data_location: String) -> Self {
         self.data_location = Some(data_location);
         self
     }
 
+    #[must_use]
     pub fn metadata(mut self, metadata: Option<String>) -> Self {
         self.metadata = metadata;
         self
     }
 
+    #[must_use]
     pub fn internal_info(mut self, internal_info: Option<String>) -> Self {
         self.internal_info = internal_info;
         self
     }
 
+
+    /// Creates a new [`S3ItemDetail`] from the builder.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of the required fields (`bucket`, `key`, `e_tag`, `data_location`,
+    /// `metadata`, or `internal_info`) are not set.
+    #[must_use]
     pub fn build(self) -> S3ItemDetail {
         S3ItemDetail {
             bucket: self.bucket.expect("bucket is required"),
