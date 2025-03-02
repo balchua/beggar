@@ -51,6 +51,8 @@ jobs:
       run: cargo fmt --all -- --check --config-path=rustfmt.toml
 
     - uses: actions-rs/clippy-check@v1
+      env:
+        SQLX_OFFLINE: true
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         args: -- -D warnings
