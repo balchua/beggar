@@ -49,11 +49,15 @@ jobs:
     - name: Check format
       run: cargo fmt --all -- --check --config-path=rustfmt.toml
 
-    - name: Clippy
-      run: cargo clippy -- -D warnings
+    - uses: actions-rs/clippy-check@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        args: -- -D warnings
 
     - name: Build
       run: cargo build --verbose
+      env:
+        SQLX_OFFLINE: true
 
     - name: Run migrations and create SQLx offline data
       run: |
@@ -67,28 +71,6 @@ jobs:
       run: cargo test --verbose
       env:
         DATABASE_URL: postgres://postgres:postgres@localhost:5432/beggar_test
-
-  check-sqlx:
-    name: Check SQLx Queries (Offline)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Check SQLx queries (offline mode)
-        run: cargo sqlx prepare --check
-        env:
-          SQLX_OFFLINE: true
 
   coverage:
     name: Code Coverage
