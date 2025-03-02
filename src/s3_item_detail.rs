@@ -31,13 +31,11 @@ impl S3ItemDetail {
 }
 
 impl S3ItemDetailBuilder {
-
     #[must_use]
     pub fn bucket(mut self, bucket: String) -> Self {
         self.bucket = Some(bucket);
         self
     }
-
 
     #[must_use]
     pub fn key(mut self, key: String) -> Self {
@@ -50,7 +48,6 @@ impl S3ItemDetailBuilder {
         self.e_tag = Some(e_tag);
         self
     }
-
 
     #[must_use]
     pub fn last_modified(mut self, last_modified: NaiveDateTime) -> Self {
@@ -75,7 +72,6 @@ impl S3ItemDetailBuilder {
         self.internal_info = internal_info;
         self
     }
-
 
     /// Creates a new [`S3ItemDetail`] from the builder.
     ///

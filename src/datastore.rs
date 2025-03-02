@@ -2,9 +2,9 @@ use core::fmt;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use sqlx::postgres::{PgPoolOptions, PgConnectOptions};
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Pool, Postgres};
-use tracing::{info, error, debug, instrument};
+use tracing::{debug, error, info, instrument};
 
 use crate::error::Result;
 use crate::{MultipartUpload, MultipartUploadPart, S3ItemDetail, Settings};
@@ -59,9 +59,8 @@ impl PostgresDatastore {
             Duration::from_millis(settings.datasource.acquire_slow_threshold);
 
         // Log sanitized connection info (no password)
-        let sanitized_connection = format!(
-            "postgres://{user}:*****@{host}:{port}/{db}?options=-csearch_path={schema}"
-        );
+        let sanitized_connection =
+            format!("postgres://{user}:*****@{host}:{port}/{db}?options=-csearch_path={schema}");
         info!(target: "database", connection = %sanitized_connection, "Initializing database connection");
 
         // Create connection options with security settings
@@ -97,7 +96,7 @@ impl PostgresDatastore {
                     Ok(_) => {
                         info!(target: "database", "Database connection established and validated");
                         pool
-                    },
+                    }
                     Err(e) => {
                         error!(
                             target: "database",
@@ -107,7 +106,7 @@ impl PostgresDatastore {
                         return Err(e.into());
                     }
                 }
-            },
+            }
             Err(e) => {
                 error!(
                     target: "database",
@@ -138,7 +137,7 @@ impl PostgresDatastore {
             Ok(()) => {
                 info!(target: "database", "Database migrations completed successfully");
                 Ok(())
-            },
+            }
             Err(e) => {
                 error!(error = %e, "Database migration failed");
                 Err(e.into())
@@ -158,7 +157,9 @@ impl PostgresDatastore {
         // Remove potentially dangerous characters for logging
         shortened
             .chars()
-            .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '_' || *c == '-' || *c == '/')
+            .filter(|c| {
+                c.is_alphanumeric() || c.is_whitespace() || *c == '_' || *c == '-' || *c == '/'
+            })
             .collect()
     }
 
@@ -252,7 +253,8 @@ impl DataStore for PostgresDatastore {
             key
         )
         .fetch_optional(&self.pool)
-        .await {
+        .await
+        {
             Ok(result) => {
                 // Only log at info level if found - reduces noise for common "not found" cases
                 if result.is_some() {
@@ -271,7 +273,7 @@ impl DataStore for PostgresDatastore {
                     );
                 }
                 Ok(result)
-            },
+            }
             Err(e) => {
                 error!(
                     error = %e,
@@ -312,7 +314,8 @@ impl DataStore for PostgresDatastore {
             MAX_QUERY_SIZE as i32
         )
         .fetch_all(&self.pool)
-        .await {
+        .await
+        {
             Ok(result) => {
                 debug!(
                     bucket = %Self::sanitize_for_logging(bucket),
@@ -321,7 +324,7 @@ impl DataStore for PostgresDatastore {
                     "Retrieved S3 items with filter"
                 );
                 Ok(result)
-            },
+            }
             Err(e) => {
                 error!(
                     error = %e,
@@ -348,12 +351,13 @@ impl DataStore for PostgresDatastore {
             MAX_QUERY_SIZE as i32
         )
         .fetch_all(&self.pool)
-        .await {
+        .await
+        {
             Ok(result_set) => {
                 let result: Vec<String> = result_set.iter().map(|row| row.bucket.clone()).collect();
                 debug!(count = result.len(), "Retrieved all buckets");
                 Ok(result)
-            },
+            }
             Err(e) => {
                 error!(error = %e, "Failed to retrieve all buckets");
                 Err(e.into())
@@ -461,7 +465,8 @@ impl DataStore for PostgresDatastore {
             upload_id
         )
         .fetch_optional(&self.pool)
-        .await {
+        .await
+        {
             Ok(result) => {
                 debug!(
                     upload_id = %upload_id,
@@ -469,7 +474,7 @@ impl DataStore for PostgresDatastore {
                     "Access key retrieval completed"
                 );
                 Ok(result.map(|row| row.access_key))
-            },
+            }
             Err(e) => {
                 error!(
                     error = %e,
@@ -498,7 +503,8 @@ impl DataStore for PostgresDatastore {
             MAX_QUERY_SIZE as i32
         )
         .fetch_all(&self.pool)
-        .await {
+        .await
+        {
             Ok(result) => {
                 debug!(
                     upload_id = %upload_id,
@@ -506,7 +512,7 @@ impl DataStore for PostgresDatastore {
                     "Retrieved parts by upload ID"
                 );
                 Ok(result)
-            },
+            }
             Err(e) => {
                 error!(
                     error = %e,
@@ -534,7 +540,8 @@ impl DataStore for PostgresDatastore {
             upload_id
         )
         .fetch_optional(&self.pool)
-        .await {
+        .await
+        {
             Ok(result) => {
                 debug!(
                     upload_id = %upload_id,
@@ -542,7 +549,7 @@ impl DataStore for PostgresDatastore {
                     "Multipart upload retrieval completed"
                 );
                 Ok(result)
-            },
+            }
             Err(e) => {
                 error!(
                     error = %e,
@@ -566,7 +573,8 @@ impl DataStore for PostgresDatastore {
             upload_id
         )
         .execute(&self.pool)
-        .await {
+        .await
+        {
             Ok(result) => {
                 let rows_affected = result.rows_affected();
                 info!(
@@ -576,7 +584,7 @@ impl DataStore for PostgresDatastore {
                     "Multipart upload deleted"
                 );
                 Ok(())
-            },
+            }
             Err(e) => {
                 error!(
                     error = %e,
