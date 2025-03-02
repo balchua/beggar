@@ -38,7 +38,7 @@ hyper-util = { version = "0.1.9", optional = true, features = [
 md-5 = "0.10.6"
 mime = "0.3.17"
 std-next = "0.1.1"
-numeric_cast = "0.2.1"
+numeric_cast = "0.3.0"
 path-absolutize = "3.1.1"
 s3s = { version = "0.10.1", features = ["tower"] }
 serde_json = "1.0.128"
@@ -55,8 +55,8 @@ tracing-subscriber = { version = "0.3.18", optional = true, features = [
 transform-stream = "0.3.0"
 uuid = { version = "1.10.0", features = ["v4"] }
 
-tower = { version = "0.4.13", features = ["full"] }
-tower-http = { version = "0.5.2", features = ["limit", "cors"] }
+tower = { version = "0.5.2", features = ["full"] }
+tower-http = { version = "0.6.2", features = ["limit", "cors"] }
 hyper = { version = "1.4.1", features = ["full"] }
 sqlx = { version = "0.8.3", features = [
     "bigdecimal",
