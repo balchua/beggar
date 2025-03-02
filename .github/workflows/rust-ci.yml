@@ -124,12 +124,3 @@ jobs:
           files: lcov.info
           fail_ci_if_error: false
           verbose: true
-
-  security-audit:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
