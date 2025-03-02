@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM multipart_upload\n            WHERE upload_id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "40c688c59722fd6b48e3264209c76871c4a0081e6220e5ca4279c57b4bf4cc74"
+}

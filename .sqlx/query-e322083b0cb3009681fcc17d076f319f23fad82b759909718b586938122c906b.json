@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT bucket, key, metadata, internal_info, last_modified, md5 as e_tag, data_location\n            FROM s3_item_detail\n            WHERE bucket = $1 AND key = $2 \n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bucket",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "key",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "metadata",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "internal_info",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_modified",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "e_tag",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "data_location",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e322083b0cb3009681fcc17d076f319f23fad82b759909718b586938122c906b"
+}

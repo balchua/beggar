@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT upload_id, part_number, md5, last_modified, data_location\n            FROM multipart_upload_part\n            WHERE upload_id = $1\n            ORDER BY part_number ASC\n            LIMIT $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "upload_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "part_number",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "md5",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "last_modified",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "data_location",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c7feb43f3f9fed23a96c6674899464295d56e669e6e729e11a7c5dbf48d3ebc5"
+}

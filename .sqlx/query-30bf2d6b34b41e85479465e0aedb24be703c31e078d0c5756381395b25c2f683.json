@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO multipart_upload_part (upload_id, part_number, last_modified, md5, data_location)\n            VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4)\n            ON CONFLICT (upload_id, part_number) DO UPDATE\n            SET md5 = $3,\n            data_location = $4\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Int4",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "30bf2d6b34b41e85479465e0aedb24be703c31e078d0c5756381395b25c2f683"
+}

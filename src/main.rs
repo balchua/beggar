@@ -101,13 +101,42 @@ fn main() -> Result {
 #[tokio::main]
 async fn run(opt: Opt) -> Result {
     // load application settings / configuration
-    let s = settings().expect("failed to load settings");
+    let s = match settings() {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Failed to load settings: {}", e);
+            return Err(beggar::Error::from_string(format!(
+                "Failed to load settings: {}",
+                e
+            )));
+        }
+    };
 
     info!(host = ?s.datasource.host, port = s.datasource.port, "settings loaded");
-    let ds = PostgresDatastore::new(&s);
-    ds.migrate().await?;
+
+    // Use the asynchronous connect method instead of new
+    let ds = match PostgresDatastore::connect(&s).await {
+        Ok(ds) => ds,
+        Err(e) => {
+            error!("Failed to connect to database: {}", e);
+            return Err(e);
+        }
+    };
+
+    // Run migrations after successful connection
+    if let Err(e) = ds.migrate().await {
+        error!("Failed to run database migrations: {}", e);
+        return Err(e);
+    }
+
     // Setup S3 provider
-    let fs = StorageBackend::new(opt.root, ds)?;
+    let fs = match StorageBackend::new(opt.root, ds) {
+        Ok(fs) => fs,
+        Err(e) => {
+            error!("Failed to initialize storage backend: {}", e);
+            return Err(e);
+        }
+    };
 
     // Setup S3 service
     let service = {
