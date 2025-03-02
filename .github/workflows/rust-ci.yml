@@ -50,12 +50,11 @@ jobs:
     - name: Check format
       run: cargo fmt --all -- --check --config-path=rustfmt.toml
 
-    # - uses: actions-rs/clippy-check@v1
-    #   env:
-    #     SQLX_OFFLINE: true
-    #   with:
-    #     token: ${{ secrets.GITHUB_TOKEN }}
-    #     args: -- -D warnings
+    - uses: giraffate/clippy-action@v1
+      with:
+        reporter: 'github-pr-review'
+        clippy_flags: '-- -Dwarnings'
+        github_token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build
       run: cargo build --verbose
