@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 use md5::{Digest, Md5};
 use numeric_cast::NumericCast;
-use s3s::{dto::*, s3_error, S3Request, S3Response, S3Result, S3};
+use s3s::{S3, S3Request, S3Response, S3Result, dto::*, s3_error};
 use stdx::default::default;
 use tokio::{fs, io::AsyncSeekExt};
 use tokio_util::io::ReaderStream;
@@ -15,9 +15,9 @@ use tracing::debug;
 use uuid::Uuid;
 
 use crate::{
+    DataStore,
     storage_backend::{InternalInfo, StorageBackend},
     utils::{self, *},
-    DataStore,
 };
 
 /// <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Range>
@@ -665,7 +665,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
-    use crate::{error::Result, DataStore, MultipartUpload, MultipartUploadPart, S3ItemDetail};
+    use crate::{DataStore, MultipartUpload, MultipartUploadPart, S3ItemDetail, error::Result};
 
     mock! {
         #[derive(Debug)]

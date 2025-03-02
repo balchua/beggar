@@ -6,9 +6,10 @@ use std::{
 
 use md5::{Digest, Md5};
 use s3s::{
+    S3Result,
     auth::Credentials,
     dto::{self, PartNumber},
-    s3_error, S3Result,
+    s3_error,
 };
 use tokio::{
     fs,
@@ -18,9 +19,9 @@ use tokio::{
 use tracing::{debug, info, warn};
 
 use crate::{
+    DataStore, MultipartUpload, MultipartUploadPart, S3ItemDetail,
     error::*,
     utils::{self, hex, resolve_abs_path},
-    DataStore, MultipartUpload, MultipartUploadPart, S3ItemDetail,
 };
 
 #[derive(Debug)]

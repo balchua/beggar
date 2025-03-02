@@ -1,12 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
-use futures::{pin_mut, Stream, StreamExt};
+use futures::{Stream, StreamExt, pin_mut};
 use path_absolutize::Absolutize;
 use s3s::{
+    S3Result, StdError,
     auth::Credentials,
     dto::{self, Checksum, Timestamp, TimestampFormat},
-    s3_error, S3Result, StdError,
+    s3_error,
 };
 use stdx::default::default;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
