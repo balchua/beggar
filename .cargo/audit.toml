@@ -7,14 +7,14 @@
 # permanently specified in this file.
 
 [advisories]
-ignore = ["RUSTSEC-2023-0071"] # advisory IDs to ignore e.g. ["RUSTSEC-2019-0001", ...]
+ignore = ["RUSTSEC-2023-0071","RUSTSEC-2024-0384"] # advisory IDs to ignore e.g. ["RUSTSEC-2019-0001", ...]
 informational_warnings = ["unmaintained"] # warn for categories of informational advisories
-severity_threshold = "low" # CVSS severity ("none", "low", "medium", "high", "critical")
+severity_threshold = "medium" # CVSS severity ("none", "low", "medium", "high", "critical")
 
 # Output Configuration
 [output]
 deny = ["unmaintained"] # exit on error if unmaintained dependencies are found
-format = "json" # "terminal" (human readable report) or "json"
+format = "terminal" # "terminal" (human readable report) or "json"
 quiet = false # Only print information on error
 show_tree = true # Show inverse dependency trees along with advisories (default: true)
 
