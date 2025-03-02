@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT bucket, key, metadata, internal_info, last_modified, md5 as e_tag, data_location\n            FROM s3_item_detail\n            WHERE bucket = $1 AND key = $2 \n            ",
+  "query": "\n            SELECT bucket, key, metadata, internal_info, last_modified, md5 as e_tag, data_location\n            FROM s3_item_detail\n            WHERE bucket = $1 AND key = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -55,5 +55,5 @@
       false
     ]
   },
-  "hash": "e322083b0cb3009681fcc17d076f319f23fad82b759909718b586938122c906b"
+  "hash": "908e8f3651865fa9ea5748f4ba9da847b1e189d7228864ef6ec99888aa5f2e1b"
 }
