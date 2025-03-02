@@ -4,7 +4,7 @@ version = "0.11.0-dev"
 description = "An S3 server based on file system with metadata stored in Postgres"
 keywords = ["s3"]
 categories = ["web-programming", "web-programming::http-server", "S3"]
-edition = "2021"
+edition = "2024"
 
 [[bin]]
 name = "beggar"
@@ -69,8 +69,8 @@ serde_yaml = "0.9.34"
 serde = "1.0.217"
 
 [dev-dependencies]
-postgresql_embedded = { version = "0.17.5", features = ["tokio", "zonky"] }
-postgresql_archive = "0.17.5"
+postgresql_embedded = { version = "0.18.1", features = ["tokio", "zonky"] }
+postgresql_archive = "0.18.1"
 anyhow = { version = "1.0.89", features = ["backtrace"] }
 aws-config = { version = "1.5.8", default-features = false }
 aws-credential-types = { version = "1.2.1", features = ["test-util"] }

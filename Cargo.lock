@@ -121,9 +121,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.95"
+version = "1.0.96"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
+checksum = "6b964d184e89d9b6b67dd2715bc8e74cf3107fb2b529990c90cf517326150bf4"
 dependencies = [
  "backtrace",
 ]
@@ -2658,9 +2658,9 @@ dependencies = [
 
 [[package]]
 name = "postgresql_archive"
-version = "0.17.5"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f80472d31c5b8840eecd0a563da6df437db5046d82097ce98e0dfc114fc084b7"
+checksum = "c40e1d7c4e82dbd0e5be54d363f9819a3c08b2f16afa70ec8e9a42651f2985ca"
 dependencies = [
  "async-trait",
  "flate2",
@@ -2691,9 +2691,9 @@ dependencies = [
 
 [[package]]
 name = "postgresql_commands"
-version = "0.17.5"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38513212330c0ec1bb365d5fb42a48204f9e54ba7fa376dc62707884314cfcac"
+checksum = "72be76d517870a0a82ba7ae9967c7362cbb7e28929c4e52ece39cc8fcc2c8acb"
 dependencies = [
  "thiserror 2.0.11",
  "tokio",
@@ -2702,15 +2702,14 @@ dependencies = [
 
 [[package]]
 name = "postgresql_embedded"
-version = "0.17.5"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb30f308707e182a68173db34e8c13979e35e565cf9197cefe7fd40bc1ff5b82"
+checksum = "2bcebb7e7954423a4a7a2120b58cf616f83d97dfd446487964b891c6c03191d4"
 dependencies = [
  "anyhow",
- "home",
  "postgresql_archive",
  "postgresql_commands",
- "rand 0.8.5",
+ "rand 0.9.0",
  "semver",
  "sqlx",
  "target-triple",
