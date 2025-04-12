@@ -78,6 +78,7 @@ pub fn init_checksum_hasher(
     crc32c: Option<&String>,
     sha1: Option<&String>,
     sha256: Option<&String>,
+    crc64: Option<&String>,
 ) -> s3s::checksum::ChecksumHasher {
     let mut checksum: s3s::checksum::ChecksumHasher = default();
     if crc32.is_some() {
@@ -91,6 +92,9 @@ pub fn init_checksum_hasher(
     }
     if sha256.is_some() {
         checksum.sha256 = Some(default());
+    }
+    if crc64.is_some() {
+        checksum.crc64nvme = Some(default());
     }
     checksum
 }
@@ -119,6 +123,7 @@ pub fn validate_checksums(
     crc32c: Option<&String>,
     sha1: Option<&String>,
     sha256: Option<&String>,
+    crc64: Option<&String>,
 ) -> S3Result<()> {
     if checksum.checksum_crc32 != crc32.cloned() {
         return Err(s3_error!(BadDigest, "checksum_crc32 mismatch"));
@@ -131,6 +136,9 @@ pub fn validate_checksums(
     }
     if checksum.checksum_sha256 != sha256.cloned() {
         return Err(s3_error!(BadDigest, "checksum_sha256 mismatch"));
+    }
+    if checksum.checksum_crc64nvme != crc64.cloned() {
+        return Err(s3_error!(BadDigest, "checksum_crc64nvme mismatch"));
     }
     Ok(())
 }

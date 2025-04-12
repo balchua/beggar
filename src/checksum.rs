@@ -1,6 +1,6 @@
-use crate::storage_backend::InternalInfo;
-
 use stdx::default::default;
+
+use crate::storage_backend::InternalInfo;
 
 pub fn modify_internal_info(
     info: &mut serde_json::Map<String, serde_json::Value>,
@@ -30,6 +30,13 @@ pub fn modify_internal_info(
             serde_json::Value::String(checksum_sha256.clone()),
         );
     }
+
+    if let Some(checksum_crc64nvme) = &checksum.checksum_crc64nvme {
+        info.insert(
+            "checksum_crc64".to_owned(),
+            serde_json::Value::String(checksum_crc64nvme.clone()),
+        );
+    }
 }
 
 pub fn from_internal_info(info: &InternalInfo) -> s3s::dto::Checksum {
@@ -46,13 +53,17 @@ pub fn from_internal_info(info: &InternalInfo) -> s3s::dto::Checksum {
     if let Some(checksum_sha256) = info.get("checksum_sha256") {
         ans.checksum_sha256 = Some(checksum_sha256.as_str().unwrap().to_owned());
     }
+    if let Some(checksum_crc64) = info.get("checksum_crc64") {
+        ans.checksum_crc64nvme = Some(checksum_crc64.as_str().unwrap().to_owned());
+    }
     ans
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn test_modify_internal_info() {
@@ -62,6 +73,8 @@ mod tests {
             checksum_crc32c: Some("crc32c".to_string()),
             checksum_sha1: Some("sha1".to_string()),
             checksum_sha256: Some("sha256".to_string()),
+            checksum_crc64nvme: Some("crc64".to_string()),
+            checksum_type: None,
         };
 
         modify_internal_info(&mut info, &checksum);
@@ -70,6 +83,7 @@ mod tests {
         assert_eq!(info.get("checksum_crc32c"), Some(&json!("crc32c")));
         assert_eq!(info.get("checksum_sha1"), Some(&json!("sha1")));
         assert_eq!(info.get("checksum_sha256"), Some(&json!("sha256")));
+        assert_eq!(info.get("checksum_crc64"), Some(&json!("crc64")));
     }
 
     #[test]
@@ -79,7 +93,8 @@ mod tests {
             "checksum_crc32": "crc32",
             "checksum_crc32c": "crc32c",
             "checksum_sha1": "sha1",
-            "checksum_sha256": "sha256"
+            "checksum_sha256": "sha256",
+            "checksum_crc64": "crc64"
         }"#,
         )
         .unwrap();
@@ -90,6 +105,7 @@ mod tests {
         assert_eq!(checksum.checksum_crc32c, Some("crc32c".to_string()));
         assert_eq!(checksum.checksum_sha1, Some("sha1".to_string()));
         assert_eq!(checksum.checksum_sha256, Some("sha256".to_string()));
+        assert_eq!(checksum.checksum_crc64nvme, Some("crc64".to_string()));
     }
 
     #[test]
@@ -101,5 +117,6 @@ mod tests {
         assert_eq!(checksum.checksum_crc32c, None);
         assert_eq!(checksum.checksum_sha1, None);
         assert_eq!(checksum.checksum_sha256, None);
+        assert_eq!(checksum.checksum_crc64nvme, None);
     }
 }

@@ -601,25 +601,29 @@ mod tests {
         let crc32c = Some("crc32c".to_string());
         let sha1 = Some("sha1".to_string());
         let sha256 = Some("sha256".to_string());
+        let crc64 = Some("crc64".to_string());
 
         let checksum_hasher = utils::init_checksum_hasher(
             crc32.as_ref(),
             crc32c.as_ref(),
             sha1.as_ref(),
             sha256.as_ref(),
+            crc64.as_ref(),
         );
 
         assert!(checksum_hasher.crc32.is_some());
         assert!(checksum_hasher.crc32c.is_some());
         assert!(checksum_hasher.sha1.is_some());
         assert!(checksum_hasher.sha256.is_some());
+        assert!(checksum_hasher.crc64nvme.is_some());
 
-        let checksum_hasher = utils::init_checksum_hasher(None, None, None, None);
+        let checksum_hasher = utils::init_checksum_hasher(None, None, None, None, None);
 
         assert!(checksum_hasher.crc32.is_none());
         assert!(checksum_hasher.crc32c.is_none());
         assert!(checksum_hasher.sha1.is_none());
         assert!(checksum_hasher.sha256.is_none());
+        assert!(checksum_hasher.crc64nvme.is_none());
     }
 
     #[test]
@@ -633,12 +637,15 @@ mod tests {
         let crc32c = Some("crc32c".to_string());
         let sha1 = Some("sha1".to_string());
         let sha256 = Some("sha256".to_string());
+        let crc64 = Some("crc64".to_string());
 
         let checksum = Checksum {
             checksum_crc32: Some("crc32".to_string()),
             checksum_crc32c: Some("crc32c".to_string()),
             checksum_sha1: Some("sha1".to_string()),
             checksum_sha256: Some("sha256".to_string()),
+            checksum_crc64nvme: Some("crc64".to_string()),
+            checksum_type: None,
         };
 
         let result = utils::validate_checksums(
@@ -647,6 +654,7 @@ mod tests {
             crc32c.as_ref(),
             sha1.as_ref(),
             sha256.as_ref(),
+            crc64.as_ref(),
         );
         assert!(result.is_ok());
 
@@ -656,6 +664,8 @@ mod tests {
             checksum_crc32c: Some("crc32c".to_string()),
             checksum_sha1: Some("sha1".to_string()),
             checksum_sha256: Some("sha256".to_string()),
+            checksum_crc64nvme: Some("crc64".to_string()),
+            checksum_type: None,
         };
         let result = utils::validate_checksums(
             &checksum,
@@ -663,6 +673,7 @@ mod tests {
             crc32c.as_ref(),
             sha1.as_ref(),
             sha256.as_ref(),
+            crc64.as_ref(),
         );
         // let result = utils::validate_checksums(&checksum, &crc32, &crc32c, &sha1,
         // &sha256);
@@ -674,6 +685,8 @@ mod tests {
             checksum_crc32c: Some("wrong_crc32c".to_string()),
             checksum_sha1: Some("sha1".to_string()),
             checksum_sha256: Some("sha256".to_string()),
+            checksum_crc64nvme: Some("crc64".to_string()),
+            checksum_type: None,
         };
         let result = utils::validate_checksums(
             &checksum,
@@ -681,6 +694,7 @@ mod tests {
             crc32c.as_ref(),
             sha1.as_ref(),
             sha256.as_ref(),
+            crc64.as_ref(),
         );
         assert!(result.is_err());
 
@@ -690,6 +704,8 @@ mod tests {
             checksum_crc32c: Some("crc32c".to_string()),
             checksum_sha1: Some("wrong_sha1".to_string()),
             checksum_sha256: Some("sha256".to_string()),
+            checksum_crc64nvme: Some("crc64".to_string()),
+            checksum_type: None,
         };
         let result = utils::validate_checksums(
             &checksum,
@@ -697,6 +713,7 @@ mod tests {
             crc32c.as_ref(),
             sha1.as_ref(),
             sha256.as_ref(),
+            crc64.as_ref(),
         );
         assert!(result.is_err());
 
@@ -706,6 +723,8 @@ mod tests {
             checksum_crc32c: Some("crc32c".to_string()),
             checksum_sha1: Some("sha1".to_string()),
             checksum_sha256: Some("wrong_sha256".to_string()),
+            checksum_crc64nvme: Some("crc64".to_string()),
+            checksum_type: None,
         };
         let result = utils::validate_checksums(
             &checksum,
@@ -713,6 +732,7 @@ mod tests {
             crc32c.as_ref(),
             sha1.as_ref(),
             sha256.as_ref(),
+            crc64.as_ref(),
         );
         assert!(result.is_err());
     }

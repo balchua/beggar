@@ -196,6 +196,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
                 let bucket = Bucket {
                     creation_date: Some(created),
                     name: Some(bucket.to_owned()),
+                    ..Default::default()
                 };
                 debug!("bucket: {:?}", bucket);
                 buckets.push(bucket);
@@ -205,6 +206,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
         let output = ListBucketsOutput {
             buckets: Some(buckets),
             owner: None,
+            ..Default::default()
         };
         Ok(S3Response::new(output))
     }
@@ -311,6 +313,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
             input.checksum_crc32c.as_ref(),
             input.checksum_sha1.as_ref(),
             input.checksum_sha256.as_ref(),
+            input.checksum_crc64nvme.as_ref(),
         );
 
         if key.ends_with('/') {
@@ -339,6 +342,7 @@ impl<T: DataStore> S3 for StorageBackend<T> {
             input.checksum_crc32c.as_ref(),
             input.checksum_sha1.as_ref(),
             input.checksum_sha256.as_ref(),
+            input.checksum_crc64nvme.as_ref(),
         )?;
 
         debug!(path = %object_path.display(), ?size, %md5_sum, ?checksum, "write file");
